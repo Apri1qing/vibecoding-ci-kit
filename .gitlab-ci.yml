@@ -1,0 +1,368 @@
+# GitLab AI CI — Claude Code CLI on shell executor + optional Feishu / @claude webhook flow
+# Set ANTHROPIC_API_KEY and other variables under Settings → CI/CD → Variables
+
+stages:
+  - review
+  - ai-assist
+  - post-merge
+
+variables:
+  CLAUDE_MODEL: "MiniMax-M2.7"
+  RUNNER_EXTRA_PATH: ""
+  AI_REVIEW_DOC_BASE: "docs/features"
+  AI_REVIEW_MEMORY_BANK_DIR: "memory-bank"
+
+# ============================================================
+# Level 1: push to feature/*
+# ============================================================
+feature-review:
+  stage: review
+  timeout: 15 minutes
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^feature\//
+  script:
+    - |
+      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
+      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
+      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found, skipping review"; exit 0; }
+
+      DOC_BASE="${AI_REVIEW_DOC_BASE:-docs/features}"
+      DOC_PATH="${DOC_BASE}/$(echo $CI_COMMIT_BRANCH | sed 's|feature/||')-tech-doc.md"
+      [ -f "$DOC_PATH" ] && DOC_HINT="Read $DOC_PATH for requirements alignment" || DOC_HINT="No tech-doc found; skip requirements check"
+      COMMIT_URL="${CI_SERVER_URL}/${CI_PROJECT_PATH}/commit/${CI_COMMIT_SHA}"
+
+      BEFORE_SHA="${CI_COMMIT_BEFORE_SHA:-}"
+      if [ -z "$BEFORE_SHA" ] || echo "$BEFORE_SHA" | grep -qE '^0+$'; then
+        BEFORE_SHA=$(git merge-base origin/${CI_DEFAULT_BRANCH:-master} HEAD 2>/dev/null || echo "HEAD~1")
+      fi
+
+      {
+        echo "Level 1 Review: inspect changes on \`$CI_COMMIT_BRANCH\` from $BEFORE_SHA to HEAD."
+        echo "Follow skill: \`.claude/skills/code-review-report/SKILL.md\` — report format is mandatory."
+        echo ""
+        echo "Check: coding standards (.claude/rules/), quality, $DOC_HINT."
+        echo ""
+        echo "**Output**: Follow the code-review-report skill: summary, risk table, detailed findings."
+      } | claude --model $CLAUDE_MODEL \
+          --allowedTools "Bash Read Grep Glob" \
+          --debug \
+          -p | tee review-report.md
+    - |
+      API_URL="${CI_API_V4_URL/https:/http:}"
+      if [ -n "$GITLAB_API_TOKEN" ]; then
+        COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n@%s\n\n%s" "$GITLAB_USER_LOGIN" "$(cat review-report.md)")
+        HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/gitlab-response.json \
+          --request POST \
+          --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          --data-urlencode "note=${COMMENT_BODY}" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/comments")
+        [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && echo "✓ Comment posted" || echo "✗ Failed to post comment (HTTP $HTTP_CODE)"
+      else
+        echo "⚠ GITLAB_API_TOKEN not set, skipping commit comment"
+      fi
+    - |
+      if [ -n "$FEISHU_APP_TOKEN" ]; then
+        AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
+        python3 .gitlab/send-feishu.py review-report.md "Feature Review: $CI_COMMIT_BRANCH" "$COMMIT_URL" "$AUTHOR_EMAIL" || echo "Feishu notification failed"
+      else
+        echo "⚠ FEISHU_APP_TOKEN not set, skipping Feishu"
+      fi
+  allow_failure: true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - review-report.md
+
+# ============================================================
+# Level 2: MR targeting integration/*
+# ============================================================
+mr-review:
+  stage: review
+  timeout: 20 minutes
+  rules:
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^integration(\/|-)/'
+  script:
+    - |
+      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
+      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
+      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found, skipping review"; exit 0; }
+
+      CURRENT_URL=$(git remote get-url origin)
+      git remote set-url origin "${CURRENT_URL/https:/http:}"
+
+      DOC_BASE="${AI_REVIEW_DOC_BASE:-docs/features}"
+      DOC_PATH="${DOC_BASE}/$(echo $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME | sed 's|feature/||')-tech-doc.md"
+      MR_URL="${CI_SERVER_URL}/${CI_PROJECT_PATH}/merge_requests/${CI_MERGE_REQUEST_IID}"
+      MR_SCOPE_LINE="${AI_REVIEW_MR_SCOPE_HINT:-Scope: .claude/rules/ (if present), $DOC_PATH, and docs/ or memory-bank/ for architecture and performance notes.}"
+
+      git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+
+      {
+        echo "Level 2 MR Review: full review \`$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME → $CI_MERGE_REQUEST_TARGET_BRANCH_NAME\`."
+        echo "Follow skill: \`.claude/skills/code-review-report/SKILL.md\` — report format is mandatory."
+        echo ""
+        echo "$MR_SCOPE_LINE"
+        echo ""
+        echo "**Output**: Same as Level 1; Level 2 is stricter before merge to integration."
+      } | claude --model $CLAUDE_MODEL \
+          --allowedTools "Bash Read Grep Glob" \
+          --debug \
+          -p | tee review-report.md
+    - |
+      API_URL="${CI_API_V4_URL/https:/http:}"
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
+        COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n\n%s" "$(cat review-report.md)")
+        curl -sS --request POST \
+          --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          --data-urlencode "body=${COMMENT_BODY}" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
+      fi
+    - |
+      if [ -n "$FEISHU_APP_TOKEN" ]; then
+        AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
+        python3 .gitlab/send-feishu.py review-report.md "MR Review: !$CI_MERGE_REQUEST_IID" "$MR_URL" "$AUTHOR_EMAIL" || echo "Feishu notification failed"
+      fi
+  allow_failure: true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - review-report.md
+
+# ============================================================
+# @claude: comment trigger (webhook + trigger token)
+# ============================================================
+claude-assist:
+  stage: ai-assist
+  timeout: 20 minutes
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "trigger" && $AI_FLOW_EVENT == "comment"'
+  script:
+    - |
+      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
+      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
+      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found"; exit 1; }
+      which jq >/dev/null 2>&1 || { echo "✗ jq not found"; exit 1; }
+
+      git config user.name "Claude Bot"
+      git config user.email "claude-bot@${CI_SERVER_HOST}"
+      GIT_URL="http://oauth2:${GITLAB_API_TOKEN}@$(echo $CI_SERVER_URL | sed 's|https://||;s|http://||')/${CI_PROJECT_PATH}.git"
+      git remote set-url origin "$GIT_URL"
+
+      BRANCH="${AI_FLOW_BRANCH}"
+      git fetch origin "$BRANCH"
+      git checkout "$BRANCH"
+      git pull origin "$BRANCH"
+    - |
+      API_URL="${CI_API_V4_URL/https:/http:}"
+
+      if [ -n "$AI_FLOW_MR_IID" ]; then
+        echo "📥 MR: fetching diff and discussions for MR !${AI_FLOW_MR_IID}..."
+
+        MR_INFO=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}")
+
+        TARGET_BRANCH=$(echo "$MR_INFO" | jq -r '.target_branch')
+        SOURCE_BRANCH=$(echo "$MR_INFO" | jq -r '.source_branch')
+
+        echo "  Source: $SOURCE_BRANCH → Target: $TARGET_BRANCH"
+
+        git fetch origin "$TARGET_BRANCH"
+        git diff "origin/$TARGET_BRANCH...HEAD" > /tmp/mr-diff.txt
+        echo "✓ MR diff saved to /tmp/mr-diff.txt ($(wc -l < /tmp/mr-diff.txt) lines)"
+
+        DISCUSSIONS=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}/discussions")
+
+        echo "🔍 Classifying MR notes..."
+        AI_REVIEWS=$(echo "$DISCUSSIONS" | jq -r '
+          .[] | .notes[] | select(.body | contains("<!-- AI_CODE_REVIEW -->"))
+          | "- " + .body' | head -c 10000)
+
+        HUMAN_FEEDBACK=$(echo "$DISCUSSIONS" | jq -r '
+          .[] | .notes[] | select(.body | contains("<!-- AI_CODE_REVIEW -->") | not)
+          | "- [" + .author.name + "]: " + .body' | head -c 10000)
+
+      else
+        COMMIT_SHA="${AI_FLOW_COMMIT_SHA}"
+        echo "📥 Commit: fetching diff and comments for $COMMIT_SHA..."
+
+        git show "$COMMIT_SHA" > /tmp/commit-diff.txt
+        echo "✓ Commit diff saved to /tmp/commit-diff.txt ($(wc -l < /tmp/commit-diff.txt) lines)"
+
+        COMMENTS=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${COMMIT_SHA}/comments")
+
+        echo "🔍 Classifying commit comments..."
+        AI_REVIEWS=$(echo "$COMMENTS" | jq -r '
+          .[] | select(.body | contains("<!-- AI_CODE_REVIEW -->"))
+          | "- " + .body' | head -c 10000)
+
+        HUMAN_FEEDBACK=$(echo "$COMMENTS" | jq -r '
+          .[] | select(.body | contains("<!-- AI_CODE_REVIEW -->") | not)
+          | "- [" + .author.name + "]: " + .body' | head -c 10000)
+      fi
+
+      echo "✓ AI review lines: $(echo "$AI_REVIEWS" | wc -l)"
+      echo "✓ Human feedback lines: $(echo "$HUMAN_FEEDBACK" | wc -l)"
+
+      echo "$AI_REVIEWS" > /tmp/ai-reviews.txt
+      echo "$HUMAN_FEEDBACK" > /tmp/human-feedback.txt
+    - |
+      if [ -n "$AI_FLOW_MR_IID" ]; then
+        CONTEXT_TYPE="MR !${AI_FLOW_MR_IID}"
+        DIFF_FILE="/tmp/mr-diff.txt"
+      else
+        CONTEXT_TYPE="Commit ${AI_FLOW_COMMIT_SHA:0:8}"
+        DIFF_FILE="/tmp/commit-diff.txt"
+      fi
+
+      sed 's/^      //' > /tmp/claude-prompt.txt <<'EOF'
+      User commented on ${AI_FLOW_CONTEXT} (CONTEXT_TYPE_PLACEHOLDER):
+      ${AI_FLOW_INPUT}
+
+      ## Code Changes
+
+      Read DIFF_FILE_PLACEHOLDER first to understand the full code changes.
+
+      ## Comment Context
+
+      ### Human Feedback (Highest Priority)
+      HUMAN_FEEDBACK_PLACEHOLDER
+
+      ### AI Review Comments (Secondary Priority)
+      AI_REVIEWS_PLACEHOLDER
+
+      ## Task Requirements
+
+      1. **Priority Rules**:
+         - Human Feedback > AI Review > Current user instruction
+         - If human says "skip item X", skip it even if AI review mentions it
+         - When conflicts arise, follow human feedback
+
+      2. **Execution Steps**:
+         - Read DIFF_FILE_PLACEHOLDER to understand code changes
+         - Analyze all comments to understand fix intent
+         - Modify code (use Edit/Write tools)
+         - Commit and push:
+           ```bash
+           git add .
+           git commit -m "fix: apply review suggestions from @claude [skip ci]"
+           git push origin BRANCH_PLACEHOLDER
+           ```
+
+      3. **Important Notes**:
+         - Don't fix issues that are already fixed
+         - If comments are unclear, be conservative
+         - Keep commit messages concise and clear
+
+      Begin task execution.
+      EOF
+
+      python3 - <<'PYEOF'
+      import re
+
+      replacements = {
+          'CONTEXT_TYPE_PLACEHOLDER': '''${CONTEXT_TYPE}''',
+          'DIFF_FILE_PLACEHOLDER': '''${DIFF_FILE}''',
+          'HUMAN_FEEDBACK_PLACEHOLDER': open('/tmp/human-feedback.txt').read(),
+          'AI_REVIEWS_PLACEHOLDER': open('/tmp/ai-reviews.txt').read(),
+          'BRANCH_PLACEHOLDER': '''${BRANCH}''',
+          '${AI_FLOW_CONTEXT}': '''${AI_FLOW_CONTEXT}''',
+          '${AI_FLOW_INPUT}': '''${AI_FLOW_INPUT}''',
+      }
+
+      with open('/tmp/claude-prompt.txt', 'r') as f:
+          content = f.read()
+
+      for placeholder, value in replacements.items():
+          content = content.replace(placeholder, value)
+
+      with open('/tmp/claude-prompt.txt', 'w') as f:
+          f.write(content)
+      PYEOF
+
+      cat /tmp/claude-prompt.txt
+    - |
+      MAX_RETRIES=2
+      for i in $(seq 1 $MAX_RETRIES); do
+        echo "🤖 Claude run (attempt $i/$MAX_RETRIES)..."
+
+        if claude --model $CLAUDE_MODEL \
+          --permission-mode acceptEdits \
+          --allowedTools "Bash Read Edit Write Grep Glob" \
+          --disallowedTools "Agent WebFetch WebSearch" \
+          --debug \
+          -p < /tmp/claude-prompt.txt | tee /tmp/claude-output.txt; then
+
+          echo "✓ Done"
+
+          if git log origin/${BRANCH}..HEAD --oneline | grep -q .; then
+            echo "✓ New commits pushed"
+          else
+            echo "⚠ No new commits (nothing to do or failure)"
+          fi
+
+          break
+        else
+          if [ $i -lt $MAX_RETRIES ]; then
+            echo "⚠ Failed, reset and retry..."
+            git reset --hard "origin/${BRANCH}"
+            git clean -fd
+            sleep 5
+          else
+            echo "✗ Failed after $MAX_RETRIES attempts"
+            exit 1
+          fi
+        fi
+      done
+  allow_failure: true
+  artifacts:
+    when: always
+    expire_in: 3 days
+    paths:
+      - /tmp/claude-prompt.txt
+      - /tmp/claude-output.txt
+      - /tmp/ai-reviews.txt
+      - /tmp/human-feedback.txt
+      - /tmp/mr-diff.txt
+      - /tmp/commit-diff.txt
+
+# ============================================================
+# Optional: auto-update memory-bank dir after merge to integration/*
+# ============================================================
+update-memory-bank:
+  stage: post-merge
+  timeout: 10 minutes
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^integration(\/|-)/ && $CI_PIPELINE_SOURCE == "push"'
+  allow_failure: true
+  script:
+    - |
+      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
+      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
+    - 'echo "update-memory-bank: CI_COMMIT_TITLE=${CI_COMMIT_TITLE:-}"'
+    - |
+      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found, skipping"; exit 0; }
+      [ -z "$GITLAB_API_TOKEN" ] && { echo "✗ GITLAB_API_TOKEN not set, skipping"; exit 0; }
+
+      git config user.name "cc-reviewer"
+      git config user.email "cc-reviewer@gitlab.com"
+      GIT_URL="http://oauth2:${GITLAB_API_TOKEN}@$(echo $CI_SERVER_URL | sed 's|https://||;s|http://||')/${CI_PROJECT_PATH}.git"
+      git remote set-url origin "$GIT_URL"
+    - |
+      echo "Merge to $CI_COMMIT_BRANCH — update memory bank per project conventions." \
+        | claude --model $CLAUDE_MODEL \
+            --permission-mode acceptEdits \
+            --disallowedTools "Bash"
+    - |
+      MB_DIR="${AI_REVIEW_MEMORY_BANK_DIR:-memory-bank}"
+      if ! git diff --quiet "${MB_DIR}/"; then
+        git add "${MB_DIR}/"
+        git commit -m "chore: auto-update memory bank [skip ci]"
+        git push origin "HEAD:${CI_COMMIT_BRANCH}"
+        echo "✓ Pushed ${MB_DIR} to ${CI_COMMIT_BRANCH}"
+      else
+        echo "⚠ No changes under ${MB_DIR}"
+      fi
