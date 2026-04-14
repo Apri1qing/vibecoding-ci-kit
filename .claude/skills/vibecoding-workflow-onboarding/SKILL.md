@@ -47,6 +47,24 @@ After **Track A**, the **application repository** (not the kit repo) contains: *
 6. Set **CI/CD variables** (reference **GitLab CI/CD variables**) — does **not** trigger pipeline. **Present all variables (required + optional) to the user and let them decide what to set. Do not pre-filter or decide on their behalf.**
 7. Push — **this triggers the pipeline**. Warn the user: **Runner (Track B) is required for ALL CI jobs** (`feature-review`, `mr-review`, `update-memory-bank`, `claude-assist`). Without it, every job stays pending indefinitely. Tell the user the pipeline will work only after Track B is done.
 8. Fill and paste the **Handoff checklist** in **`references/vibecoding-ci-kit-onboarding.md`** for the Runner session.
+9. **Introduce the workflow to the user** — after Track A is done, explain the following so the user knows what they've just set up:
+
+   **Memory bank (`memory-bank/`)**
+   - **What it is:** the app repo's long-lived project knowledge — scope, architecture, stack, current work, feature/test docs. Not source code; keeps humans and agents aligned across sessions.
+   - **How to update:**
+     - **Chat:** say `update memory bank` → agent does a full reconciliation of all core files per `memory-bank-framework.md §3`.
+     - **CI:** auto-runs `update-memory-bank` job on push to `integration/*` (no prompt needed).
+     - **Hooks (local):** `feature-tech-doc-sync-trigger.py` syncs `memory-bank/docs/features/*-tech-doc.md` when working on a feature branch.
+
+   **AI code review**
+   - **Level 1:** triggered on every push to `feature/*` → reviews the diff → posts comment on the commit.
+   - **Level 2:** triggered on MR targeting `integration/*` → reviews the full MR diff → posts comment on the MR.
+   - **Source of truth for review:** the reviewer reads `.claude/rules/coding-standards.md` (shared conventions), the relevant `memory-bank/` files (architecture, patterns, current context), and the `ci-code-review` skill for report format. The review reflects *your project's own rules*, not generic best practices.
+
+   **`@claude` (comment-driven changes)**
+   - Leave a comment on any **GitLab commit or MR** mentioning `@claude` followed by your request (e.g. `@claude fix the null check in UserService`).
+   - The webhook listener picks it up → calls the Trigger API → starts the `claude-assist` pipeline job → Claude reads the diff + all comments → applies changes → pushes a commit back to the branch.
+   - Requires Track B (Runner + webhook listener) to be complete.
 
 ### Pitfall
 
