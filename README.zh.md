@@ -64,9 +64,8 @@
 
    | 变量 | 是否必填 | 用途 |
    |------|----------|------|
-   | `ANTHROPIC_API_KEY` | 是 | Claude（审查 + 协助）。 |
-   | `GITLAB_API_TOKEN` | 是 | CI 中调用 GitLab API。 |
-   | `GITLAB_TRIGGER_TOKEN` | 使用 **`@claude`** 时需要 | Webhook → `claude-assist`。 |
+   | `GITLAB_API_TOKEN` | 是 | CI 中调用 GitLab API。PAT 权限范围：`api` + `read_repository` + `write_repository`（`write_repository` 为必选，`claude-assist` 和 `update-memory-bank` 需要通过 token push 代码）。 |
+   | `GITLAB_TRIGGER_TOKEN` | 是 | 流水线触发令牌；webhook 监听器用于启动 `claude-assist`。 |
 
    | 变量 | 默认值（见 **`repo/.gitlab-ci.yml`**） | 用途 |
    |------|------------------------------------------|------|
@@ -76,7 +75,7 @@
 
 3. **GitLab Runner 机器：**须使用 **GitLab Runner** 执行作业（不是任意 CI Worker）。运行 Job 的系统用户，其 **`PATH`** 上需有 **`claude`** 与 **`jq`**（供 `feature-review`、`mr-review`、`update-memory-bank` 等）。
 
-4. **`@claude`（在 commit / MR 下评论）：**在已安装 **Claude Code** CLI（`claude`）的机器上安装 **GitLab Runner**。将 **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** 拷到该环境（或放到 `~/.claude/skills/gitlab-runner-onboarding`），用 Claude 打开，并按 **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** 配置 shell Runner、webhook 与 **`GITLAB_TRIGGER_TOKEN`**。
+4. **`@claude`（在 commit / MR 下评论）：** 在**同一台 Runner 机器**上，将 **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** 拷到该环境（或放到 `~/.claude/skills/gitlab-runner-onboarding`），用 Claude 打开，并按 **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** 配置 webhook 监听器与 **`GITLAB_TRIGGER_TOKEN`**。
 
 5. **Memory bank：** **CI** — 合并进 **`integration/*`** 后，**下一次 push** 会跑 **`update-memory-bank`**（GitLab 里无需再输入提示词）；依据 **`AGENTS.md`** 与 **`.claude/rules/memory-bank-framework.md`**。**对话** — 用户说 **`update memory bank`** 时做全量核对（框架 **Update Rules §3**）；日常小改见 §1–2 / §4–5。
 

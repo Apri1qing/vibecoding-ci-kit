@@ -40,14 +40,16 @@ Canonical detail for **`vibecoding-workflow-onboarding`** lives **in this skill 
 
 ## GitLab CI/CD variables
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes | Claude API for CI jobs |
-| `GITLAB_API_TOKEN` | Yes | PAT with scopes your jobs need |
-| `GITLAB_TRIGGER_TOKEN` | For `@claude` | Pipeline trigger token |
-| `CLAUDE_MODEL` | No | Model id |
-| `FEISHU_APP_TOKEN` | No | Feishu notifications |
-| `CODE_REVIEW_REPORT_LANGUAGE` | No | `zh` or `en` |
+**Required** (must set): `GITLAB_API_TOKEN`, `GITLAB_TRIGGER_TOKEN`.  
+**Optional** (have `.gitlab-ci.yml` defaults, only set to override): the rest.
+
+| Variable | Required | Options / Default | Purpose |
+|----------|----------|-------------------|---------|
+| `GITLAB_API_TOKEN` | ✅ Yes | — | PAT with `api` + `read_repository` + `write_repository` scopes (`write_repository` required: `claude-assist` and `update-memory-bank` push commits via token) |
+| `GITLAB_TRIGGER_TOKEN` | ✅ Yes | — | Pipeline trigger token (webhook listener → Trigger API); create at Settings → CI/CD → Pipeline triggers |
+| `CODE_REVIEW_REPORT_LANGUAGE` | Optional | `zh` / `en`; default **`zh`** if unset | Review report language (`zh` = Chinese, `en` = English) |
+| `CLAUDE_MODEL` | Optional | Any Anthropic model ID; default **`claude-sonnet-4-6`** if unset | Model passed to `claude` CLI in CI |
+| `FEISHU_APP_TOKEN` | Optional | —; default **unset** (skip notifications) | Feishu app token; if unset, Feishu notifications are skipped but reviews still run |
 
 ---
 
@@ -88,7 +90,7 @@ Align with **`.claude/rules/memory-bank-framework.md`**, **`.gitlab-ci.yml`** `r
 | GitLab project URL | |
 | `repo/` merged | ✓ / pending |
 | CI variables set | |
-| `GITLAB_TRIGGER_TOKEN` + webhook | for `@claude` |
+| `GITLAB_TRIGGER_TOKEN` + webhook | Required (listener `.env` + GitLab webhook) |
 | Bundle on Runner | path to `runner/.claude/skills/gitlab-runner-onboarding/` |
 | Next | On Runner: **gitlab-runner-onboarding** skill |
 
@@ -96,7 +98,7 @@ Align with **`.claude/rules/memory-bank-framework.md`**, **`.gitlab-ci.yml`** `r
 
 ---
 
-## Triggers and `@claude`
+## `@claude` — comment on commit / MR
 
 Webhook (Comments) → listener → Trigger API with `GITLAB_TRIGGER_TOKEN`. Job `claude-assist` when `CI_PIPELINE_SOURCE == trigger` and vars match `.gitlab-ci.yml`. Details: **`runner/.claude/skills/gitlab-runner-onboarding/SKILL.md`**.
 

@@ -64,9 +64,8 @@ Also: **`CLAUDE.md`**, **`AGENTS.md`**.
 
    | Variable | Required | Purpose |
    |----------|----------|---------|
-   | `ANTHROPIC_API_KEY` | Yes | Claude (review + assist). |
-   | `GITLAB_API_TOKEN` | Yes | GitLab API in CI. |
-   | `GITLAB_TRIGGER_TOKEN` | For **`@claude`** | Webhook → `claude-assist`. |
+   | `GITLAB_API_TOKEN` | Yes | GitLab API in CI. PAT scopes: `api` + `read_repository` + `write_repository` (write needed for `claude-assist` and `update-memory-bank` to push commits). |
+   | `GITLAB_TRIGGER_TOKEN` | Yes | Pipeline trigger token; webhook listener starts `claude-assist`. |
 
    | Variable | Default (see **`repo/.gitlab-ci.yml`**) | Purpose |
    |----------|------------------------------------------|---------|
@@ -74,9 +73,9 @@ Also: **`CLAUDE.md`**, **`AGENTS.md`**.
    | `CLAUDE_MODEL` | **`claude-sonnet-4-6`** | Model passed to `claude` in CI. |
    | `FEISHU_APP_TOKEN` | *(unset)* | If unset, **Feishu** notifications are skipped; reviews still run. |
 
-3. **GitLab Runner host:** use **GitLab Runner** (not a generic CI agent). The OS user that runs jobs must have **`claude`** + **`jq`** on **`PATH`** (for `feature-review`, `mr-review`, `update-memory-bank`, …).
+3. **GitLab Runner host:** use **GitLab Runner** (not a generic CI agent). The OS user that runs jobs must have **`claude`** + **`jq`** on **`PATH`** (for `feature-review`, `mr-review`, `update-memory-bank`, …). **Runner must be registered and online before you push** — otherwise jobs stay `pending` indefinitely.
 
-4. **`@claude` (comments on commits / MRs):** install **GitLab Runner** on a host that has the **Claude Code** CLI (`claude`). Copy **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** to that environment (or to `~/.claude/skills/gitlab-runner-onboarding`), open it in Claude, and follow **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** for shell Runner, webhook, and **`GITLAB_TRIGGER_TOKEN`**.
+4. **`@claude` (comments on commits / MRs):** on the **same Runner host**, copy **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** to that environment (or to `~/.claude/skills/gitlab-runner-onboarding`), open it in Claude, and follow **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** for the webhook listener and **`GITLAB_TRIGGER_TOKEN`** setup.
 
 5. **Memory bank:** **CI** — after merge to **`integration/*`**, **`update-memory-bank`** on the next push (no GitLab prompt); uses **`AGENTS.md`** + **`.claude/rules/memory-bank-framework.md`**. **Chat** — full pass when the user says **`update memory bank`** (framework **Update Rules §3**); smaller edits per §1–2 / §4–5.
 
