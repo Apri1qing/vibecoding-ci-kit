@@ -47,6 +47,8 @@ Canonical detail for **`vibecoding-workflow-onboarding`** lives **in this skill 
 |----------|----------|-------------------|---------|
 | `GITLAB_API_TOKEN` | ✅ Yes | — | PAT with `api` + `read_repository` + `write_repository` scopes (`write_repository` required: `claude-assist` and `update-memory-bank` push commits via token) |
 | `GITLAB_TRIGGER_TOKEN` | ✅ Yes | — | Pipeline trigger token (webhook listener → Trigger API); create at Settings → CI/CD → Pipeline triggers |
+| `ANTHROPIC_API_KEY` | ✅ Yes, if not using OAuth | — | Required when the Runner user is not authenticated via `claude` OAuth login |
+| `ANTHROPIC_BASE_URL` | Optional | — | Override Anthropic API endpoint (internal mirror or corporate proxy); set alongside `ANTHROPIC_API_KEY` when needed |
 | `CODE_REVIEW_REPORT_LANGUAGE` | Optional | `zh` / `en`; default **`zh`** if unset | Review report language (`zh` = Chinese, `en` = English) |
 | `CLAUDE_MODEL` | Optional | Any Anthropic model ID; default **`claude-sonnet-4-6`** if unset | Model passed to `claude` CLI in CI |
 | `FEISHU_APP_TOKEN` | Optional | —; default **unset** (skip notifications) | Feishu app token; if unset, Feishu notifications are skipped but reviews still run |

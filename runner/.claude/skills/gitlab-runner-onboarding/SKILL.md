@@ -70,7 +70,7 @@ Use the following when registering. **Understand each field before filling it in
 | `GitLab instance URL` | GitLab base URL the Runner uses to fetch CI jobs |
 | `Registration token` | Trust token between Runner and GitLab; from **Project → Settings → CI/CD → Runners** |
 | `Description` | Display name for this Runner in the GitLab UI |
-| `Tags` | Job filter: only jobs whose `tags` match are picked. Use project/machine tags such as `macos`, `shell` |
+| `Tags` | Job filter: only jobs whose `tags` match are picked. **Leave empty** — this kit's `.gitlab-ci.yml` jobs do not specify tags, so an untagged runner picks up all jobs. Adding tags will cause jobs to stay pending. |
 | `Executor` | Use **`shell`**. This repo’s jobs are shell scripts; Docker and other executors are not assumed |
 
 **Example registration (replace placeholders):**
@@ -79,9 +79,10 @@ gitlab-runner register \
   --url "https://gitlab.example.com" \
   --registration-token "YOUR_REGISTRATION_TOKEN" \
   --description "shell-runner-01" \
-  --tag-list "macos,shell" \
   --executor "shell"
 ```
+
+> **Do not add tags.** This kit's jobs carry no `tags:` filter, so leaving tags empty ensures the runner picks up all jobs. Adding any tag will cause jobs to stay pending.
 
 > **Why shell?** Jobs need the local Claude Code CLI (`which claude`), git, and HTTP calls to the GitLab API. Shell executor uses the host environment directly.
 
@@ -158,6 +159,8 @@ Configure secrets for pipelines:
 |----------|--------|----------|---------|---------|
 | `GITLAB_API_TOKEN` | §3.4 PAT | ✅ **Yes** | REST + Git HTTPS (see §3.4 scopes) | Masked |
 | `GITLAB_TRIGGER_TOKEN` | §3.2 Trigger | ✅ **Yes** | Webhook listener → Trigger API (`claude-assist`); set in listener **`<LISTENER_DIR>/.env`** (§6.2) | Masked if also in GitLab |
+| `ANTHROPIC_API_KEY` | Anthropic console | ✅ **Yes, if not using OAuth** | Required when the Runner user is **not** authenticated via `claude` OAuth login. GitLab exports it automatically so `claude` CLI picks it up. | Masked |
+| `ANTHROPIC_BASE_URL` | Your org / proxy | ⚪ **Optional** | Override Anthropic API endpoint (e.g. internal mirror or corporate proxy). Set alongside `ANTHROPIC_API_KEY` when needed. | Masked |
 | `CLAUDE_MODEL` | Your choice | ⚪ **Optional** | Claude model id, e.g. `claude-opus-4-6`; default if unset | Masked |
 | `FEISHU_APP_TOKEN` | Feishu app | ⚪ **Optional** | Feishu notifications | Masked |
 
@@ -427,7 +430,7 @@ gitlab-runner list
 |---------|--------------|------------|
 | `which claude: not found` | CLI not on `PATH` | Under the Runner user, fix `PATH` (Homebrew `bin`, etc.) or set in CI `before_script` |
 | `claude` auth / API errors | CLI not configured on the Runner user | Finish Claude Code setup on the host |
-| `claude-assist` stuck pending | Tag mismatch | Runner tags must match the job’s `tags` (e.g. `claude`) |
+| `claude-assist` stuck pending | Runner has tags set | This kit’s jobs carry no `tags:` filter — remove all tags from the runner so it picks up all jobs |
 | Webhook fails | Firewall / bind address | Open inbound the chosen port; ensure URL uses an IP/DNS GitLab can reach |
 | Feishu errors | Missing token | Set `FEISHU_APP_TOKEN` in CI (and any listener-side config if used) |
 | Pipeline loops | Missing `[skip ci]` | Bot commits from `update-memory-bank` / @claude should include `[skip ci]` per project rules |

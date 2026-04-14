@@ -12,6 +12,18 @@ variables:
 default:
   before_script:
     - export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+    # If the runner user is not authenticated via claude OAuth login,
+    # set ANTHROPIC_API_KEY (and optionally ANTHROPIC_BASE_URL) in
+    # GitLab CI/CD variables. GitLab exports them automatically, but
+    # we re-export here to ensure they are available to the claude CLI.
+    - |
+      if [ -n "$ANTHROPIC_API_KEY" ]; then
+        export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
+      fi
+    - |
+      if [ -n "$ANTHROPIC_BASE_URL" ]; then
+        export ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL"
+      fi
 
 .review_report_artifacts:
   allow_failure: true
