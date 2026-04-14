@@ -1,53 +1,68 @@
-# GitLab AI CI — Claude Code CLI on shell executor + optional Feishu / @claude webhook flow
-# Set ANTHROPIC_API_KEY and other variables under Settings → CI/CD → Variables
-
 stages:
   - review
   - ai-assist
   - post-merge
 
 variables:
-  CLAUDE_MODEL: "MiniMax-M2.7"
-  RUNNER_EXTRA_PATH: ""
-  AI_REVIEW_DOC_BASE: "docs/features"
-  AI_REVIEW_MEMORY_BANK_DIR: "memory-bank"
+  # Override in GitLab CI/CD variables if your runner uses a different model id.
+  CLAUDE_MODEL: "claude-sonnet-4-6"
+  # Review report language: zh (default, Chinese) or en (English). Set CODE_REVIEW_REPORT_LANGUAGE in CI/CD variables to override per project.
+  CODE_REVIEW_REPORT_LANGUAGE: "zh"
 
-# ============================================================
-# Level 1: push to feature/*
-# ============================================================
+default:
+  before_script:
+    - export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+.review_report_artifacts:
+  allow_failure: true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - review-report.md
+
+# Level 1: feature/* push — first push: branch_tree (no git-diff range); later: diff_range
 feature-review:
+  extends: .review_report_artifacts
   stage: review
   timeout: 15 minutes
   rules:
     - if: $CI_COMMIT_BRANCH =~ /^feature\//
   script:
     - |
-      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
-      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
-      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found, skipping review"; exit 0; }
+      which claude >/dev/null 2>&1 || { echo "claude CLI not installed; skipping review"; exit 0; }
 
-      DOC_BASE="${AI_REVIEW_DOC_BASE:-docs/features}"
-      DOC_PATH="${DOC_BASE}/$(echo $CI_COMMIT_BRANCH | sed 's|feature/||')-tech-doc.md"
-      [ -f "$DOC_PATH" ] && DOC_HINT="Read $DOC_PATH for requirements alignment" || DOC_HINT="No tech-doc found; skip requirements check"
       COMMIT_URL="${CI_SERVER_URL}/${CI_PROJECT_PATH}/commit/${CI_COMMIT_SHA}"
-
-      BEFORE_SHA="${CI_COMMIT_BEFORE_SHA:-}"
-      if [ -z "$BEFORE_SHA" ] || echo "$BEFORE_SHA" | grep -qE '^0+$'; then
-        BEFORE_SHA=$(git merge-base origin/${CI_DEFAULT_BRANCH:-master} HEAD 2>/dev/null || echo "HEAD~1")
+      COMMIT_BEFORE="${CI_COMMIT_BEFORE_SHA:-}"
+      # First push: CI_COMMIT_BEFORE_SHA empty or all zeros — review tracked files at HEAD (see ci-code-review SKILL).
+      if [ -z "$COMMIT_BEFORE" ] || echo "$COMMIT_BEFORE" | grep -qE '^0+$'; then
+        {
+          echo "review_level: 1"
+          echo "first_push: true"
+          echo "review_scope: branch_tree"
+          echo "diff_range: n/a"
+          echo "branch: ${CI_COMMIT_BRANCH}"
+          echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
+          echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
+        } | claude --model $CLAUDE_MODEL \
+            --allowedTools "Bash Read Grep Glob" \
+            --debug \
+            -p | tee review-report.md
+      else
+        {
+          echo "review_level: 1"
+          echo "first_push: false"
+          echo "review_scope: diff_range"
+          echo "diff_range: ${COMMIT_BEFORE}..HEAD"
+          echo "branch: ${CI_COMMIT_BRANCH}"
+          echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
+          echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
+        } | claude --model $CLAUDE_MODEL \
+            --allowedTools "Bash Read Grep Glob" \
+            --debug \
+            -p | tee review-report.md
       fi
 
-      {
-        echo "Level 1 Review: inspect changes on \`$CI_COMMIT_BRANCH\` from $BEFORE_SHA to HEAD."
-        echo "Follow skill: \`.claude/skills/code-review-report/SKILL.md\` — report format is mandatory."
-        echo ""
-        echo "Check: coding standards (.claude/rules/), quality, $DOC_HINT."
-        echo ""
-        echo "**Output**: Follow the code-review-report skill: summary, risk table, detailed findings."
-      } | claude --model $CLAUDE_MODEL \
-          --allowedTools "Bash Read Grep Glob" \
-          --debug \
-          -p | tee review-report.md
-    - |
       API_URL="${CI_API_V4_URL/https:/http:}"
       if [ -n "$GITLAB_API_TOKEN" ]; then
         COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n@%s\n\n%s" "$GITLAB_USER_LOGIN" "$(cat review-report.md)")
@@ -56,60 +71,47 @@ feature-review:
           --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
           --data-urlencode "note=${COMMENT_BODY}" \
           "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/comments")
-        [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && echo "✓ Comment posted" || echo "✗ Failed to post comment (HTTP $HTTP_CODE)"
+        [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && echo "Comment posted" || echo "Failed to post commit comment (HTTP $HTTP_CODE)"
       else
-        echo "⚠ GITLAB_API_TOKEN not set, skipping commit comment"
+        echo "GITLAB_API_TOKEN not set; skipping commit comment"
       fi
-    - |
+
       if [ -n "$FEISHU_APP_TOKEN" ]; then
         AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
         python3 .gitlab/send-feishu.py review-report.md "Feature Review: $CI_COMMIT_BRANCH" "$COMMIT_URL" "$AUTHOR_EMAIL" || echo "Feishu notification failed"
       else
-        echo "⚠ FEISHU_APP_TOKEN not set, skipping Feishu"
+        echo "FEISHU_APP_TOKEN not set; skipping Feishu notification"
       fi
-  allow_failure: true
-  artifacts:
-    when: always
-    expire_in: 7 days
-    paths:
-      - review-report.md
 
-# ============================================================
-# Level 2: MR targeting integration/*
-# ============================================================
+# Level 2: MR targeting integration/* (stdin: review_level / mr_source / mr_target / ci_code_review)
 mr-review:
+  extends: .review_report_artifacts
   stage: review
   timeout: 20 minutes
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^integration(\/|-)/'
   script:
     - |
-      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
-      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
-      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found, skipping review"; exit 0; }
+      which claude >/dev/null 2>&1 || { echo "claude CLI not installed; skipping review"; exit 0; }
 
       CURRENT_URL=$(git remote get-url origin)
       git remote set-url origin "${CURRENT_URL/https:/http:}"
 
-      DOC_BASE="${AI_REVIEW_DOC_BASE:-docs/features}"
-      DOC_PATH="${DOC_BASE}/$(echo $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME | sed 's|feature/||')-tech-doc.md"
       MR_URL="${CI_SERVER_URL}/${CI_PROJECT_PATH}/merge_requests/${CI_MERGE_REQUEST_IID}"
-      MR_SCOPE_LINE="${AI_REVIEW_MR_SCOPE_HINT:-Scope: .claude/rules/ (if present), $DOC_PATH, and docs/ or memory-bank/ for architecture and performance notes.}"
 
       git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
 
       {
-        echo "Level 2 MR Review: full review \`$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME → $CI_MERGE_REQUEST_TARGET_BRANCH_NAME\`."
-        echo "Follow skill: \`.claude/skills/code-review-report/SKILL.md\` — report format is mandatory."
-        echo ""
-        echo "$MR_SCOPE_LINE"
-        echo ""
-        echo "**Output**: Same as Level 1; Level 2 is stricter before merge to integration."
+        echo "review_level: 2"
+        echo "mr_source: ${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
+        echo "mr_target: ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+        echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
+        echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
       } | claude --model $CLAUDE_MODEL \
           --allowedTools "Bash Read Grep Glob" \
           --debug \
           -p | tee review-report.md
-    - |
+
       API_URL="${CI_API_V4_URL/https:/http:}"
       if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
         COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n\n%s" "$(cat review-report.md)")
@@ -118,35 +120,39 @@ mr-review:
           --data-urlencode "body=${COMMENT_BODY}" \
           "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
       fi
-    - |
+
       if [ -n "$FEISHU_APP_TOKEN" ]; then
         AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
         python3 .gitlab/send-feishu.py review-report.md "MR Review: !$CI_MERGE_REQUEST_IID" "$MR_URL" "$AUTHOR_EMAIL" || echo "Feishu notification failed"
       fi
+
+.claude_assist_artifacts:
   allow_failure: true
   artifacts:
     when: always
-    expire_in: 7 days
+    expire_in: 3 days
     paths:
-      - review-report.md
+      - /tmp/claude-prompt.txt
+      - /tmp/claude-output.txt
+      - /tmp/ai-reviews.txt
+      - /tmp/human-feedback.txt
+      - /tmp/mr-diff.txt
+      - /tmp/commit-diff.txt
 
-# ============================================================
-# @claude: comment trigger (webhook + trigger token)
-# ============================================================
+# @claude: trigger + AI_FLOW_EVENT=comment
 claude-assist:
+  extends: .claude_assist_artifacts
   stage: ai-assist
   timeout: 20 minutes
   rules:
     - if: '$CI_PIPELINE_SOURCE == "trigger" && $AI_FLOW_EVENT == "comment"'
   script:
     - |
-      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
-      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
-      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found"; exit 1; }
-      which jq >/dev/null 2>&1 || { echo "✗ jq not found"; exit 1; }
+      which claude >/dev/null 2>&1 || { echo "claude CLI not installed"; exit 1; }
+      which jq >/dev/null 2>&1 || { echo "jq not installed"; exit 1; }
 
-      git config user.name "Claude Bot"
-      git config user.email "claude-bot@${CI_SERVER_HOST}"
+      git config user.name "claude"
+      git config user.email "claude@users.noreply.${CI_SERVER_HOST:-gitlab}"
       GIT_URL="http://oauth2:${GITLAB_API_TOKEN}@$(echo $CI_SERVER_URL | sed 's|https://||;s|http://||')/${CI_PROJECT_PATH}.git"
       git remote set-url origin "$GIT_URL"
 
@@ -154,62 +160,49 @@ claude-assist:
       git fetch origin "$BRANCH"
       git checkout "$BRANCH"
       git pull origin "$BRANCH"
-    - |
+
       API_URL="${CI_API_V4_URL/https:/http:}"
 
       if [ -n "$AI_FLOW_MR_IID" ]; then
-        echo "📥 MR: fetching diff and discussions for MR !${AI_FLOW_MR_IID}..."
-
+        echo "MR mode: fetching diff and discussions for MR !${AI_FLOW_MR_IID}..."
         MR_INFO=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
           "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}")
-
         TARGET_BRANCH=$(echo "$MR_INFO" | jq -r '.target_branch')
         SOURCE_BRANCH=$(echo "$MR_INFO" | jq -r '.source_branch')
-
-        echo "  Source: $SOURCE_BRANCH → Target: $TARGET_BRANCH"
-
+        echo "  Source: $SOURCE_BRANCH -> Target: $TARGET_BRANCH"
         git fetch origin "$TARGET_BRANCH"
         git diff "origin/$TARGET_BRANCH...HEAD" > /tmp/mr-diff.txt
-        echo "✓ MR diff saved to /tmp/mr-diff.txt ($(wc -l < /tmp/mr-diff.txt) lines)"
-
+        echo "MR diff saved to /tmp/mr-diff.txt ($(wc -l < /tmp/mr-diff.txt) lines)"
         DISCUSSIONS=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
           "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}/discussions")
-
-        echo "🔍 Classifying MR notes..."
+        echo "Classifying MR notes..."
         AI_REVIEWS=$(echo "$DISCUSSIONS" | jq -r '
           .[] | .notes[] | select(.body | contains("<!-- AI_CODE_REVIEW -->"))
           | "- " + .body' | head -c 10000)
-
         HUMAN_FEEDBACK=$(echo "$DISCUSSIONS" | jq -r '
           .[] | .notes[] | select(.body | contains("<!-- AI_CODE_REVIEW -->") | not)
           | "- [" + .author.name + "]: " + .body' | head -c 10000)
-
       else
         COMMIT_SHA="${AI_FLOW_COMMIT_SHA}"
-        echo "📥 Commit: fetching diff and comments for $COMMIT_SHA..."
-
+        echo "Commit mode: fetching diff and comments for $COMMIT_SHA..."
         git show "$COMMIT_SHA" > /tmp/commit-diff.txt
-        echo "✓ Commit diff saved to /tmp/commit-diff.txt ($(wc -l < /tmp/commit-diff.txt) lines)"
-
+        echo "Commit diff saved to /tmp/commit-diff.txt ($(wc -l < /tmp/commit-diff.txt) lines)"
         COMMENTS=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
           "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${COMMIT_SHA}/comments")
-
-        echo "🔍 Classifying commit comments..."
+        echo "Classifying commit comments..."
         AI_REVIEWS=$(echo "$COMMENTS" | jq -r '
           .[] | select(.body | contains("<!-- AI_CODE_REVIEW -->"))
           | "- " + .body' | head -c 10000)
-
         HUMAN_FEEDBACK=$(echo "$COMMENTS" | jq -r '
           .[] | select(.body | contains("<!-- AI_CODE_REVIEW -->") | not)
           | "- [" + .author.name + "]: " + .body' | head -c 10000)
       fi
 
-      echo "✓ AI review lines: $(echo "$AI_REVIEWS" | wc -l)"
-      echo "✓ Human feedback lines: $(echo "$HUMAN_FEEDBACK" | wc -l)"
-
+      echo "AI review notes: $(echo "$AI_REVIEWS" | wc -l) lines"
+      echo "Human feedback: $(echo "$HUMAN_FEEDBACK" | wc -l) lines"
       echo "$AI_REVIEWS" > /tmp/ai-reviews.txt
       echo "$HUMAN_FEEDBACK" > /tmp/human-feedback.txt
-    - |
+
       if [ -n "$AI_FLOW_MR_IID" ]; then
         CONTEXT_TYPE="MR !${AI_FLOW_MR_IID}"
         DIFF_FILE="/tmp/mr-diff.txt"
@@ -284,10 +277,10 @@ claude-assist:
       PYEOF
 
       cat /tmp/claude-prompt.txt
-    - |
+
       MAX_RETRIES=2
       for i in $(seq 1 $MAX_RETRIES); do
-        echo "🤖 Claude run (attempt $i/$MAX_RETRIES)..."
+        echo "Running Claude (attempt $i/$MAX_RETRIES)..."
 
         if claude --model $CLAUDE_MODEL \
           --permission-mode acceptEdits \
@@ -296,42 +289,27 @@ claude-assist:
           --debug \
           -p < /tmp/claude-prompt.txt | tee /tmp/claude-output.txt; then
 
-          echo "✓ Done"
-
+          echo "Task finished"
           if git log origin/${BRANCH}..HEAD --oneline | grep -q .; then
-            echo "✓ New commits pushed"
+            echo "New commits on branch"
           else
-            echo "⚠ No new commits (nothing to do or failure)"
+            echo "No new commit (no changes needed or run failed)"
           fi
-
           break
         else
           if [ $i -lt $MAX_RETRIES ]; then
-            echo "⚠ Failed, reset and retry..."
+            echo "Run failed; resetting and retrying..."
             git reset --hard "origin/${BRANCH}"
             git clean -fd
             sleep 5
           else
-            echo "✗ Failed after $MAX_RETRIES attempts"
+            echo "Task failed after $MAX_RETRIES attempts"
             exit 1
           fi
         fi
       done
-  allow_failure: true
-  artifacts:
-    when: always
-    expire_in: 3 days
-    paths:
-      - /tmp/claude-prompt.txt
-      - /tmp/claude-output.txt
-      - /tmp/ai-reviews.txt
-      - /tmp/human-feedback.txt
-      - /tmp/mr-diff.txt
-      - /tmp/commit-diff.txt
 
-# ============================================================
-# Optional: auto-update memory-bank dir after merge to integration/*
-# ============================================================
+# integration/* push: optional memory-bank refresh
 update-memory-bank:
   stage: post-merge
   timeout: 10 minutes
@@ -340,29 +318,25 @@ update-memory-bank:
   allow_failure: true
   script:
     - |
-      if [ -n "$RUNNER_EXTRA_PATH" ]; then export PATH="$RUNNER_EXTRA_PATH:$PATH"; fi
-      if ! command -v claude >/dev/null 2>&1 && [ -d /opt/homebrew/bin ]; then export PATH="/opt/homebrew/bin:$PATH"; fi
-    - 'echo "update-memory-bank: CI_COMMIT_TITLE=${CI_COMMIT_TITLE:-}"'
-    - |
-      which claude >/dev/null 2>&1 || { echo "✗ claude CLI not found, skipping"; exit 0; }
-      [ -z "$GITLAB_API_TOKEN" ] && { echo "✗ GITLAB_API_TOKEN not set, skipping"; exit 0; }
+      echo "update-memory-bank: CI_COMMIT_TITLE=${CI_COMMIT_TITLE:-}"
+      which claude >/dev/null 2>&1 || { echo "claude CLI not installed; skipping"; exit 0; }
+      [ -z "$GITLAB_API_TOKEN" ] && { echo "GITLAB_API_TOKEN not set; skipping"; exit 0; }
 
-      git config user.name "cc-reviewer"
-      git config user.email "cc-reviewer@gitlab.com"
+      git config user.name "claude"
+      git config user.email "claude@users.noreply.${CI_SERVER_HOST:-gitlab}"
       GIT_URL="http://oauth2:${GITLAB_API_TOKEN}@$(echo $CI_SERVER_URL | sed 's|https://||;s|http://||')/${CI_PROJECT_PATH}.git"
       git remote set-url origin "$GIT_URL"
-    - |
-      echo "Merge to $CI_COMMIT_BRANCH — update memory bank per project conventions." \
+
+      echo "New code merged into $CI_COMMIT_BRANCH; update memory-bank if needed." \
         | claude --model $CLAUDE_MODEL \
             --permission-mode acceptEdits \
             --disallowedTools "Bash"
-    - |
-      MB_DIR="${AI_REVIEW_MEMORY_BANK_DIR:-memory-bank}"
-      if ! git diff --quiet "${MB_DIR}/"; then
-        git add "${MB_DIR}/"
+
+      if ! git diff --quiet memory-bank/; then
+        git add memory-bank/
         git commit -m "chore: auto-update memory bank [skip ci]"
         git push origin "HEAD:${CI_COMMIT_BRANCH}"
-        echo "✓ Pushed ${MB_DIR} to ${CI_COMMIT_BRANCH}"
+        echo "memory-bank pushed to ${CI_COMMIT_BRANCH}"
       else
-        echo "⚠ No changes under ${MB_DIR}"
+        echo "No memory-bank changes"
       fi

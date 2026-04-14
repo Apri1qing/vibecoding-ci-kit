@@ -1,0 +1,29 @@
+{
+  "UserPromptSubmit": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/code-review-trigger.py\"",
+          "timeout": 10
+        },
+        {
+          "type": "command",
+          "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/coding-rule-trigger.py\"",
+          "timeout": 10
+        },
+        {
+          "type": "command",
+          "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/feature-tech-doc-sync-trigger.py\"",
+          "timeout": 10
+        },
+        {
+          "type": "command",
+          "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/test-plan-sync-trigger.py\"",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}

@@ -1,77 +1,99 @@
-# gitlab-ai-ci-pipeline
+# vibecoding-ci-kit
 
-GitLab CI templates and helpers for **AI code review** (Claude Code CLI) and optional **`@claude`** assist via webhook + pipeline trigger. Language and examples are **English**; no proprietary project data.
+[English](README.md) · [Chinese](README.zh.md)
+
+**vibecoding-ci-kit** is not application code — copy **the contents of** **`repo/`** into your **GitLab application repo root** (see [If you are a human](#if-you-are-a-human) step **1**) to add CI, hooks, and docs. English by default unless your team says otherwise.
+
+**CI:** **GitLab** only for now.
+
+## Prerequisites
+
+1. **Clone** this repository.
+2. **Branches:** develop on **`feature/<name>`**, then merge into **`integration/...`** (or change **`rules:`** in **`.gitlab-ci.yml`** so CI matches your branch names).
+
+---
 
 ## What you get
 
-| Feature | Trigger | Notes |
-|---------|---------|-------|
-| Level 1 review | Push to `feature/*` | Diff-based report; optional GitLab commit comment + Feishu |
-| Level 2 review | MR targeting `integration/*` or `integration-*` | Full MR review |
-| `@claude` assist | Comment on commit/MR | Requires webhook + trigger token |
-| Memory bank update | Push to `integration/*` | Optional; updates `AI_REVIEW_MEMORY_BANK_DIR` |
+| What | When |
+|------|------|
+| **Level 1 AI review** | Push **`feature/*`** |
+| **Level 2 AI review (MR)** | MR to **`integration/*`** or **`integration-*`** |
+| **`@claude`** (comment on **commit** / **MR**) | Leave a **comment on GitLab** (commit or merge request) that mentions **`@claude`** and your request — that **triggers a pipeline** so Claude can apply changes.|
+| **Memory bank** + **`update-memory-bank`** | Push **`integration/*`**; keep in sync via **`AGENTS.md`** + rules |
 
-**Requirements**: GitLab (SaaS or self-managed), **shell** runner, `claude` and `jq` on the runner, `ANTHROPIC_API_KEY` in CI variables. Feishu is optional.
+### `repo/.claude/` (and merge root)
 
-## Architecture
+| File | Role |
+|------|------|
+| **`settings.json`** | Required so **hooks** run on **user prompt submit**; without it, scripts in **`hooks/`** never run. |
 
-```mermaid
-flowchart LR
-  subgraph gitlab [GitLab]
-    Push[Push_or_MR]
-    Pipeline[CI_Pipeline]
-    Trigger[Trigger_API]
-  end
-  subgraph runner [Shell_Runner]
-    Claude[claude_CLI]
-  end
-  subgraph optional [Optional]
-    Webhook[webhook_listener]
-  end
-  Push --> Pipeline
-  Pipeline --> Claude
-  Webhook -->|"comment_@claude"| Trigger
-  Trigger --> Pipeline
-```
+| Hooks | Role |
+|-------|------|
+| **`code-review-trigger.py`** | Code review / refactor / “per rules” → read **`.claude/rules/`** first. |
+| **`coding-rule-trigger.py`** | “Remember a rule” → append a line to **`coding-standards.md`**. |
+| **`feature-tech-doc-sync-trigger.py`** | Tech doc sync / drift → **`memory-bank/docs/features/`**. |
+| **`test-plan-sync-trigger.py`** | Test plan / TC sync → **test-plan** skill first. |
 
-## Quick start
+| Rules | Role |
+|-------|------|
+| **`coding-standards.md`** | Shared conventions (+ coding-rule hook). |
+| **`memory-bank-framework.md`** | Layout; **`feature/*`** ↔ **`docs/features/*-tech-doc.md`**. |
 
-1. Copy this repository into your app repo root (or copy `.gitlab-ci.yml`, `.gitlab/`, `.claude/skills/code-review-report/`).
-2. In **Settings → CI/CD → Variables**, set at least:
-   - `ANTHROPIC_API_KEY` (masked)
-   - `GITLAB_API_TOKEN` (project token: `api`, `read_repository`, `write_repository` as needed)
-   - `GITLAB_TRIGGER_TOKEN` if using `@claude`
-3. Install **Claude Code CLI** on the runner; ensure `claude` is on `PATH`, or set `RUNNER_EXTRA_PATH` (e.g. `/opt/homebrew/bin` on macOS).
-4. Optionally deploy `webhook/webhook-listener.py`, configure env from `webhook/.env.example`, add a GitLab webhook (Note events) and matching secret.
-5. Optionally set `FEISHU_APP_TOKEN` for Feishu DMs.
+| Skills | Role |
+|--------|------|
+| **`ci-code-review`** | CI `feature-review` / `mr-review` stdin + report shape (`CODE_REVIEW_REPORT_LANGUAGE`). |
+| **`feature-tech-doc`** | **`memory-bank/docs/features/*-tech-doc.md`**. |
+| **`test-plan`** | Test plans (e.g. **`memory-bank/docs/tests/`**). |
 
-See [docs/SETUP.md](docs/SETUP.md) for details.
+Also: **`CLAUDE.md`**, **`AGENTS.md`**.
 
-## CI variables (template defaults)
+---
 
-| Variable | Purpose |
-|----------|---------|
-| `RUNNER_EXTRA_PATH` | Prepended to `PATH` if set |
-| `AI_REVIEW_DOC_BASE` | Base dir for `{branch}-tech-doc.md` (default `docs/features`) |
-| `AI_REVIEW_MR_SCOPE_HINT` | Overrides Level 2 scope line |
-| `AI_REVIEW_MEMORY_BANK_DIR` | Directory for `update-memory-bank` job (default `memory-bank`) |
+## If you are a human
 
-## Layout
+1. **[Prerequisites](#prerequisites)** — from the clone that contains **`repo/`**:
 
-```
-.gitlab-ci.yml
-.gitlab/send-feishu.py
-.claude/skills/code-review-report/SKILL.md
-webhook/webhook-listener.py
-webhook/requirements.txt
-webhook/.env.example
-docs/SETUP.md
-```
+   ```bash
+   rsync -a repo/ /path/to/your/app/
+   ```
+
+   Fix conflicts if needed. CI runs **in the app repo**.
+
+2. **GitLab → CI/CD → Variables**
+
+   | Variable | Required | Purpose |
+   |----------|----------|---------|
+   | `ANTHROPIC_API_KEY` | Yes | Claude (review + assist). |
+   | `GITLAB_API_TOKEN` | Yes | GitLab API in CI. |
+   | `GITLAB_TRIGGER_TOKEN` | For **`@claude`** | Webhook → `claude-assist`. |
+
+   | Variable | Default (see **`repo/.gitlab-ci.yml`**) | Purpose |
+   |----------|------------------------------------------|---------|
+   | `CODE_REVIEW_REPORT_LANGUAGE` | **`zh`** | Review report language; set **`en`** for English. |
+   | `CLAUDE_MODEL` | **`claude-sonnet-4-6`** | Model passed to `claude` in CI. |
+   | `FEISHU_APP_TOKEN` | *(unset)* | If unset, **Feishu** notifications are skipped; reviews still run. |
+
+3. **GitLab Runner host:** use **GitLab Runner** (not a generic CI agent). The OS user that runs jobs must have **`claude`** + **`jq`** on **`PATH`** (for `feature-review`, `mr-review`, `update-memory-bank`, …).
+
+4. **`@claude` (comments on commits / MRs):** install **GitLab Runner** on a host that has the **Claude Code** CLI (`claude`). Copy **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** to that environment (or to `~/.claude/skills/gitlab-runner-onboarding`), open it in Claude, and follow **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** for shell Runner, webhook, and **`GITLAB_TRIGGER_TOKEN`**.
+
+5. **Memory bank:** **CI** — after merge to **`integration/*`**, **`update-memory-bank`** on the next push (no GitLab prompt); uses **`AGENTS.md`** + **`.claude/rules/memory-bank-framework.md`**. **Chat** — full pass when the user says **`update memory bank`** (framework **Update Rules §3**); smaller edits per §1–2 / §4–5.
+
+---
+
+## If you are an agent
+
+1. Load **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)** (`~/.claude/skills/`).
+
+2. **Memory bank — tell the user what it is and how to use / update it**
+
+   - **What it is:** **`memory-bank/`** is the app repo’s **long-lived project knowledge** (scope, product context, architecture, stack, current work, **`docs/`** for features and tests). It is not source code; it keeps humans and agents aligned across sessions. Details: **`AGENTS.md`**, **Reading strategy** in **`memory-bank-framework.md`**.
+
+   - **How to update:** Ongoing edits follow **Update Rules** §1–2 / §4–5 in **`memory-bank-framework.md`**. When the user asks to **`update memory bank`**, do a **full reconciliation** of every **core** root file per **§3** (not only `activeContext` / `progress`). On **`feature/*`**, keep the paired **`docs/features/*-tech-doc.md`** aligned with the branch. **CI** refreshes **`memory-bank/`** on push to **`integration/*`** — see **[If you are a human](#if-you-are-a-human)** step **5** above.
+
+---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-## Remote repository
-
-After creating an empty project on GitLab/GitHub, see [docs/REMOTE.md](docs/REMOTE.md).
+MIT — [LICENSE](LICENSE).

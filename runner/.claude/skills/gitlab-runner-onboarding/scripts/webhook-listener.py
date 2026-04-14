@@ -14,22 +14,22 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Environment
 GITLAB_URL = os.environ.get('GITLAB_URL', 'https://gitlab.com')
 GITLAB_API_TOKEN = os.environ['GITLAB_API_TOKEN']
 GITLAB_TRIGGER_TOKEN = os.environ['GITLAB_TRIGGER_TOKEN']
 WEBHOOK_SECRET = os.environ.get('WEBHOOK_SECRET', '')
-
 
 @app.route('/health', methods=['GET'])
 def health():
     """Liveness / readiness probe."""
     return jsonify({'status': 'ok'}), 200
 
-
 @app.route('/gitlab-webhook', methods=['POST'])
 def handle_webhook():
     """Handle incoming GitLab webhook payloads."""
 
+    # Optional shared secret (X-Gitlab-Token)
     if WEBHOOK_SECRET:
         token = request.headers.get('X-Gitlab-Token', '')
         if token != WEBHOOK_SECRET:
@@ -38,34 +38,41 @@ def handle_webhook():
 
     data = request.json
 
+    # Notes (comments) only
     if data.get('object_kind') != 'note':
         return jsonify({'status': 'ignored', 'reason': 'not a comment'}), 200
 
     comment = data['object_attributes']['note']
 
+    # Require @claude mention
     if '@claude' not in comment.lower():
         return jsonify({'status': 'ignored', 'reason': 'no @claude mention'}), 200
 
+    # Strip @claude to get the instruction text
     instruction = re.sub(r'@claude\s*', '', comment, flags=re.IGNORECASE).strip()
     if not instruction:
         instruction = "Execute the appropriate action based on context."
 
+    # Context for routing
     noteable_type = data['object_attributes']['noteable_type']
     project_id = data['project']['id']
     author = data.get('user', {}).get('username', 'unknown')
 
-    logger.info("@claude triggered by %s on %s", author, noteable_type)
+    logger.info(f"@claude triggered by {author} on {noteable_type}")
 
     try:
         if noteable_type == 'Commit':
+            # Comment on a commit
             commit_sha = data['commit']['id']
             context_url = data['object_attributes'].get('url', '')
 
+            # Resolve a branch that contains this commit
             branch = get_commit_branch(project_id, commit_sha)
             if not branch:
-                logger.warning("Cannot find branch for commit %s", commit_sha)
+                logger.warning(f"Cannot find branch for commit {commit_sha}")
                 return jsonify({'status': 'error', 'reason': 'cannot determine branch'}), 200
 
+            # Trigger pipeline
             result = trigger_pipeline(
                 project_id=project_id,
                 ref=branch,
@@ -81,12 +88,14 @@ def handle_webhook():
                 'pipeline_id': result.get('id')
             }), 200
 
-        if noteable_type == 'MergeRequest':
+        elif noteable_type == 'MergeRequest':
+            # Comment on an MR
             mr = data['merge_request']
             branch = mr['source_branch']
             context_url = mr.get('url', '')
             commit_sha = mr['last_commit']['id']
 
+            # Trigger pipeline
             result = trigger_pipeline(
                 project_id=project_id,
                 ref=branch,
@@ -103,16 +112,16 @@ def handle_webhook():
                 'pipeline_id': result.get('id')
             }), 200
 
-        logger.warning("Unsupported noteable type: %s", noteable_type)
-        return jsonify({
-            'status': 'ignored',
-            'reason': f'unsupported type: {noteable_type}'
-        }), 200
+        else:
+            logger.warning(f"Unsupported noteable type: {noteable_type}")
+            return jsonify({
+                'status': 'ignored',
+                'reason': f'unsupported type: {noteable_type}'
+            }), 200
 
     except Exception as e:
-        logger.error("Error handling webhook: %s", e, exc_info=True)
+        logger.error(f"Error handling webhook: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
 
 def get_commit_branch(project_id, commit_sha):
     """Resolve a branch containing the commit; prefer feature/* branches."""
@@ -124,10 +133,12 @@ def get_commit_branch(project_id, commit_sha):
         resp.raise_for_status()
         refs = resp.json()
 
+        # Prefer feature/* branches
         for ref in refs:
             if ref['type'] == 'branch' and ref['name'].startswith('feature/'):
                 return ref['name']
 
+        # Otherwise first branch ref
         for ref in refs:
             if ref['type'] == 'branch':
                 return ref['name']
@@ -135,9 +146,8 @@ def get_commit_branch(project_id, commit_sha):
         return None
 
     except Exception as e:
-        logger.error("Error getting commit branch: %s", e)
+        logger.error(f"Error getting commit branch: {e}")
         return None
-
 
 def trigger_pipeline(project_id, ref, instruction, context_url, commit_sha=None, mr_iid=None):
     """POST to trigger a pipeline via the trigger token API."""
@@ -161,22 +171,22 @@ def trigger_pipeline(project_id, ref, instruction, context_url, commit_sha=None,
         'variables': variables
     }
 
-    logger.info("Triggering pipeline on %s with instruction: %s...", ref, instruction[:50])
+    logger.info(f"Triggering pipeline on {ref} with instruction: {instruction[:50]}...")
 
     try:
         resp = requests.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         result = resp.json()
-        logger.info("Pipeline triggered: %s", result.get('web_url'))
+        logger.info(f"Pipeline triggered: {result.get('web_url')}")
         return result
 
     except requests.exceptions.HTTPError as e:
-        logger.error("Failed to trigger pipeline: %s", e.response.text)
+        logger.error(f"Failed to trigger pipeline: {e.response.text}")
         raise
     except Exception as e:
-        logger.error("Error triggering pipeline: %s", e)
+        logger.error(f"Error triggering pipeline: {e}")
         raise
 
-
 if __name__ == '__main__':
+    # Dev-only entrypoint
     app.run(host='0.0.0.0', port=5000, debug=True)
