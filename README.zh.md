@@ -71,7 +71,8 @@
    |------|------------------------------------------|------|
    | `CODE_REVIEW_REPORT_LANGUAGE` | **`zh`** | 审查报告语言；英文可设为 **`en`**。 |
    | `CLAUDE_MODEL` | **`claude-sonnet-4-6`** | CI 里传给 `claude` 的模型。 |
-   | `FEISHU_APP_TOKEN` | *未设置* | 未设置则**不**发飞书通知；审查仍会执行。 |
+   | `FEISHU_APP_ID` | *未设置* | ❌ | 飞书 app_id；未设置则不发飞书通知。 |
+   | `FEISHU_APP_SECRET` | *未设置* | ✅ | 飞书 app_secret；未设置则不发飞书通知。 |
 
 3. **GitLab Runner 机器：**须使用 **GitLab Runner** 执行作业（不是任意 CI Worker）。运行 Job 的系统用户，其 **`PATH`** 上需有 **`claude`** 与 **`jq`**（供 `feature-review`、`mr-review`、`update-memory-bank` 等）。
 

@@ -52,7 +52,27 @@ sudo gitlab-runner register
 
 Review / `@claude` jobs run **`claude`** (Claude Code CLI) on the Runner host. Install and pin versions per your org (internal mirror or official channel). Ensure the **shell** executor can find the binary on `PATH` (e.g. `which claude` under the same user that runs jobs).
 
-> **Auth:** the **Runner user** must have Claude Code **already configured** on that host. Pipeline jobs **do not** inherit your laptop’s environment.
+> **Auth:** The Runner user must authenticate Claude Code. Choose **one** of the following methods:
+
+**Method 1: API Key (recommended for CI environments)**
+- Set `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_BASE_URL` for internal mirrors) in GitLab CI/CD Variables (see Step 3.5).
+- GitLab exports these automatically as environment variables; `claude` CLI picks them up.
+- No per-user setup required on the Runner host.
+
+**Method 2: OAuth Token (for non-interactive environments)**
+- On a machine where you can run `claude` interactively, run:
+  ```bash
+  claude setup-token
+  ```
+- Copy the generated token (starts with `sk-ant-oat01-`).
+- In GitLab: **Settings → CI/CD → Variables**, add:
+  - Key: `CLAUDE_CODE_OAUTH_TOKEN`
+  - Value: the token from `setup-token`
+- `claude` CLI will use this token automatically when `ANTHROPIC_API_KEY` is not set.
+
+**Method 3: Interactive OAuth (not recommended for CI)**
+- Switch to the Runner user (e.g. `sudo -u gitlab-runner -s`), run `claude auth login`, and complete the browser flow.
+- This requires the Runner user to have an interactive shell and browser access, which is uncommon in production CI environments.
 
 ### Step 2: Register the Runner
 
@@ -120,7 +140,7 @@ Webhooks deliver comment events so @claude can be driven from notes:
 
 4. **Add webhook**
 
-> **Required:** The webhook listener is required. `@claude`, `feature-review`, `mr-review`, and `update-memory-bank` all run on the Runner — all are mandatory. Only `FEISHU_APP_TOKEN` (Feishu notifications) is optional.
+> **Required:** The webhook listener is required. `@claude`, `feature-review`, `mr-review`, and `update-memory-bank` all run on the Runner — all are mandatory. Only `FEISHU_APP_ID`/`FEISHU_APP_SECRET` (Feishu notifications) are optional.
 
 #### 3.4 Create a Personal Access Token (PAT)
 
@@ -159,10 +179,12 @@ Configure secrets for pipelines:
 |----------|--------|----------|---------|---------|
 | `GITLAB_API_TOKEN` | §3.4 PAT | ✅ **Yes** | REST + Git HTTPS (see §3.4 scopes) | Masked |
 | `GITLAB_TRIGGER_TOKEN` | §3.2 Trigger | ✅ **Yes** | Webhook listener → Trigger API (`claude-assist`); set in listener **`<LISTENER_DIR>/.env`** (§6.2) | Masked if also in GitLab |
-| `ANTHROPIC_API_KEY` | Anthropic console | ✅ **Yes, if not using OAuth** | Required when the Runner user is **not** authenticated via `claude` OAuth login. GitLab exports it automatically so `claude` CLI picks it up. | Masked |
-| `ANTHROPIC_BASE_URL` | Your org / proxy | ⚪ **Optional** | Override Anthropic API endpoint (e.g. internal mirror or corporate proxy). Set alongside `ANTHROPIC_API_KEY` when needed. | Masked |
-| `CLAUDE_MODEL` | Your choice | ⚪ **Optional** | Claude model id, e.g. `claude-opus-4-6`; default if unset | Masked |
-| `FEISHU_APP_TOKEN` | Feishu app | ⚪ **Optional** | Feishu notifications | Masked |
+| `ANTHROPIC_API_KEY` | Anthropic console | **Auth Method 1** | API key authentication (see §1.2 Method 1) | Masked |
+| `ANTHROPIC_BASE_URL` | Your org / proxy | ⚪ **Optional** | Override Anthropic API endpoint (e.g. internal mirror or corporate proxy). Set alongside `ANTHROPIC_API_KEY` when needed. | — |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` | **Auth Method 2** | OAuth token authentication (see §1.2 Method 2); starts with `sk-ant-oat01-` | Masked |
+| `CLAUDE_MODEL` | Your choice | ⚪ **Optional** | Claude model id, e.g. `claude-opus-4-6`; default if unset | — |
+| `FEISHU_APP_ID` | Feishu app | ⚪ **Optional** | Feishu app_id for notifications | — |
+| `FEISHU_APP_SECRET` | Feishu app | ⚪ **Optional** | Feishu app_secret for notifications | Masked |
 
 > **Masked variables:** GitLab only allows Masked when the value has no `$`, `\n`, etc., length ≤ 32 in some setups—check GitLab’s current rules.
 
@@ -170,7 +192,7 @@ Configure secrets for pipelines:
 - **Auto review** (`feature-review`, `mr-review`): Claude Code on the Runner host + `GITLAB_API_TOKEN`; `CLAUDE_MODEL` optional
 - **update-memory-bank:** same; PAT must include **`write_repository`**; **no** webhook required
 - **`@claude` / `claude-assist`:** **`GITLAB_TRIGGER_TOKEN`** (listener `.env`) + webhook — **required** for this kit
-- **Feishu:** optional, needs `FEISHU_APP_TOKEN`
+- **Feishu:** optional, needs `FEISHU_APP_ID` + `FEISHU_APP_SECRET`
 
 ### Step 4: Choose listener install path
 
@@ -432,7 +454,7 @@ gitlab-runner list
 | `claude` auth / API errors | CLI not configured on the Runner user | Finish Claude Code setup on the host |
 | `claude-assist` stuck pending | Runner has tags set | This kit’s jobs carry no `tags:` filter — remove all tags from the runner so it picks up all jobs |
 | Webhook fails | Firewall / bind address | Open inbound the chosen port; ensure URL uses an IP/DNS GitLab can reach |
-| Feishu errors | Missing token | Set `FEISHU_APP_TOKEN` in CI (and any listener-side config if used) |
+| Feishu errors | Missing token | Set `FEISHU_APP_ID` + `FEISHU_APP_SECRET` in CI |
 | Pipeline loops | Missing `[skip ci]` | Bot commits from `update-memory-bank` / @claude should include `[skip ci]` per project rules |
 | `@claude` silent | Webhook not delivered | Verify webhook URL, Comments trigger, and network path to the listener |
 
@@ -445,7 +467,7 @@ gitlab-runner list
 | CI | `GITLAB_API_TOKEN` | ✅ | **User → Access Tokens** (PAT) |
 | CI | `GITLAB_TRIGGER_TOKEN` | ✅ | §3.2 Trigger → listener **`<LISTENER_DIR>/.env`** (§6.2) |
 | CI | `CLAUDE_MODEL` | ⚪ | Model id string |
-| CI | `FEISHU_APP_TOKEN` | ⚪ | Feishu |
+| CI | `FEISHU_APP_ID` + `FEISHU_APP_SECRET` | ⚪ | Feishu |
 | Webhook | Listener URL | ✅ | `http://<RUNNER_HOST_IP>:<PORT>/gitlab-webhook` (port chosen in Step 4) |
 | Webhook | `WEBHOOK_SECRET` | ⚪ | Same string in GitLab + `.env` |
 
@@ -453,4 +475,4 @@ gitlab-runner list
 - **Auto review:** Runner with Claude Code configured + `GITLAB_API_TOKEN`
 - **update-memory-bank:** same; PAT needs **`write_repository`**; branch protection must allow the push
 - **`@claude`:** **`GITLAB_TRIGGER_TOKEN`** + webhook (required)
-- **Feishu:** optional `FEISHU_APP_TOKEN`
+- **Feishu:** optional `FEISHU_APP_ID` + `FEISHU_APP_SECRET`

@@ -47,11 +47,15 @@ Canonical detail for **`vibecoding-workflow-onboarding`** lives **in this skill 
 |----------|----------|-------------------|---------|
 | `GITLAB_API_TOKEN` | ✅ Yes | — | PAT with `api` + `read_repository` + `write_repository` scopes (`write_repository` required: `claude-assist` and `update-memory-bank` push commits via token) |
 | `GITLAB_TRIGGER_TOKEN` | ✅ Yes | — | Pipeline trigger token (webhook listener → Trigger API); create at Settings → CI/CD → Pipeline triggers |
-| `ANTHROPIC_API_KEY` | ✅ Yes, if not using OAuth | — | Required when the Runner user is not authenticated via `claude` OAuth login |
+| `ANTHROPIC_API_KEY` | Auth Method 1 | — | API key authentication; see `gitlab-runner-onboarding` §1.2 Method 1 |
 | `ANTHROPIC_BASE_URL` | Optional | — | Override Anthropic API endpoint (internal mirror or corporate proxy); set alongside `ANTHROPIC_API_KEY` when needed |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Auth Method 2 | — | OAuth token authentication (from `claude setup-token`); see `gitlab-runner-onboarding` §1.2 Method 2 |
 | `CODE_REVIEW_REPORT_LANGUAGE` | Optional | `zh` / `en`; default **`zh`** if unset | Review report language (`zh` = Chinese, `en` = English) |
 | `CLAUDE_MODEL` | Optional | Any Anthropic model ID; default **`claude-sonnet-4-6`** if unset | Model passed to `claude` CLI in CI |
-| `FEISHU_APP_TOKEN` | Optional | —; default **unset** (skip notifications) | Feishu app token; if unset, Feishu notifications are skipped but reviews still run |
+| `FEISHU_APP_ID` | Optional | —; default **unset** (skip notifications) | Feishu app_id; if unset, Feishu notifications are skipped but reviews still run |
+| `FEISHU_APP_SECRET` | Optional | —; default **unset** (skip notifications) | Feishu app_secret; if unset, Feishu notifications are skipped but reviews still run |
+
+> **Masking guidance:** Variables that contain secrets must be marked as **Masked** in GitLab CI/CD settings: `GITLAB_API_TOKEN`, `GITLAB_TRIGGER_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `FEISHU_APP_SECRET`. No need to mask: `CODE_REVIEW_REPORT_LANGUAGE`, `CLAUDE_MODEL`. GitLab only allows masking when the value contains no `$`, `\n`, etc., and is ≤ 32 characters in some setups.
 
 ---
 

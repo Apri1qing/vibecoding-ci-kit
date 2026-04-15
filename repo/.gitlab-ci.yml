@@ -7,29 +7,19 @@ variables:
   # Override in GitLab CI/CD variables if your runner uses a different model id.
   CLAUDE_MODEL: "claude-sonnet-4-6"
   # Review report language: zh (default, Chinese) or en (English). Set CODE_REVIEW_REPORT_LANGUAGE in CI/CD variables to override per project.
+  # Also controls Claude user-facing wording in prompts (claude-assist / update-memory-bank).
   CODE_REVIEW_REPORT_LANGUAGE: "zh"
 
 default:
   before_script:
     - export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-    # If the runner user is not authenticated via claude OAuth login,
-    # set ANTHROPIC_API_KEY (and optionally ANTHROPIC_BASE_URL) in
-    # GitLab CI/CD variables. GitLab exports them automatically, but
-    # we re-export here to ensure they are available to the claude CLI.
-    - |
-      if [ -n "$ANTHROPIC_API_KEY" ]; then
-        export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
-      fi
-    - |
-      if [ -n "$ANTHROPIC_BASE_URL" ]; then
-        export ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL"
-      fi
+    - export API_URL="${CI_API_V4_URL/https:/http:}"
 
 .review_report_artifacts:
   allow_failure: true
   artifacts:
     when: always
-    expire_in: 7 days
+    expire_in: 3 days
     paths:
       - review-report.md
 
@@ -39,43 +29,36 @@ feature-review:
   stage: review
   timeout: 15 minutes
   rules:
-    - if: $CI_COMMIT_BRANCH =~ /^feature\//
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\// && $CI_PIPELINE_SOURCE != "trigger"'
   script:
     - |
       which claude >/dev/null 2>&1 || { echo "claude CLI not installed; skipping review"; exit 0; }
 
-      COMMIT_URL="${CI_SERVER_URL}/${CI_PROJECT_PATH}/commit/${CI_COMMIT_SHA}"
+      COMMIT_URL="${CI_PROJECT_URL}/commit/${CI_COMMIT_SHA}"
       COMMIT_BEFORE="${CI_COMMIT_BEFORE_SHA:-}"
       # First push: CI_COMMIT_BEFORE_SHA empty or all zeros — review tracked files at HEAD (see ci-code-review SKILL).
       if [ -z "$COMMIT_BEFORE" ] || echo "$COMMIT_BEFORE" | grep -qE '^0+$'; then
-        {
-          echo "review_level: 1"
-          echo "first_push: true"
-          echo "review_scope: branch_tree"
-          echo "diff_range: n/a"
-          echo "branch: ${CI_COMMIT_BRANCH}"
-          echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
-          echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
-        } | claude --model $CLAUDE_MODEL \
-            --allowedTools "Bash Read Grep Glob" \
-            --debug \
-            -p | tee review-report.md
+        FIRST_PUSH=true
+        REVIEW_SCOPE=branch_tree
+        DIFF_RANGE=n/a
       else
-        {
-          echo "review_level: 1"
-          echo "first_push: false"
-          echo "review_scope: diff_range"
-          echo "diff_range: ${COMMIT_BEFORE}..HEAD"
-          echo "branch: ${CI_COMMIT_BRANCH}"
-          echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
-          echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
-        } | claude --model $CLAUDE_MODEL \
-            --allowedTools "Bash Read Grep Glob" \
-            --debug \
-            -p | tee review-report.md
+        FIRST_PUSH=false
+        REVIEW_SCOPE=diff_range
+        DIFF_RANGE="${COMMIT_BEFORE}..HEAD"
       fi
+      {
+        echo "review_level: 1"
+        echo "first_push: ${FIRST_PUSH}"
+        echo "review_scope: ${REVIEW_SCOPE}"
+        echo "diff_range: ${DIFF_RANGE}"
+        echo "branch: ${CI_COMMIT_BRANCH}"
+        echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
+        echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
+      } | claude --model $CLAUDE_MODEL \
+          --allowedTools "Bash Read Grep Glob" \
+          --debug \
+          -p | tee review-report.md
 
-      API_URL="${CI_API_V4_URL/https:/http:}"
       if [ -n "$GITLAB_API_TOKEN" ]; then
         COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n@%s\n\n%s" "$GITLAB_USER_LOGIN" "$(cat review-report.md)")
         HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/gitlab-response.json \
@@ -88,11 +71,11 @@ feature-review:
         echo "GITLAB_API_TOKEN not set; skipping commit comment"
       fi
 
-      if [ -n "$FEISHU_APP_TOKEN" ]; then
+      if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
         AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
         python3 .gitlab/send-feishu.py review-report.md "Feature Review: $CI_COMMIT_BRANCH" "$COMMIT_URL" "$AUTHOR_EMAIL" || echo "Feishu notification failed"
       else
-        echo "FEISHU_APP_TOKEN not set; skipping Feishu notification"
+        echo "FEISHU_APP_ID or FEISHU_APP_SECRET not set; skipping Feishu notification"
       fi
 
 # Level 2: MR targeting integration/* (stdin: review_level / mr_source / mr_target / ci_code_review)
@@ -109,7 +92,7 @@ mr-review:
       CURRENT_URL=$(git remote get-url origin)
       git remote set-url origin "${CURRENT_URL/https:/http:}"
 
-      MR_URL="${CI_SERVER_URL}/${CI_PROJECT_PATH}/merge_requests/${CI_MERGE_REQUEST_IID}"
+      MR_URL="${CI_PROJECT_URL}/merge_requests/${CI_MERGE_REQUEST_IID}"
 
       git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
 
@@ -124,7 +107,6 @@ mr-review:
           --debug \
           -p | tee review-report.md
 
-      API_URL="${CI_API_V4_URL/https:/http:}"
       if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
         COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n\n%s" "$(cat review-report.md)")
         curl -sS --request POST \
@@ -133,27 +115,30 @@ mr-review:
           "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
       fi
 
-      if [ -n "$FEISHU_APP_TOKEN" ]; then
-        AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
+      if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
+        AUTHOR_EMAIL=""
+        if [ -n "$GITLAB_API_TOKEN" ] && [ -n "$CI_MERGE_REQUEST_IID" ]; then
+          MR_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+            "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}" 2>/dev/null || true)
+          AUTHOR_ID=$(printf '%s' "$MR_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('author') or {}).get('id') or '')" 2>/dev/null || true)
+          if [ -n "$AUTHOR_ID" ]; then
+            USER_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+              "${API_URL}/users/${AUTHOR_ID}" 2>/dev/null || true)
+            AUTHOR_EMAIL=$(printf '%s' "$USER_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('public_email') or d.get('email') or '').strip())" 2>/dev/null || true)
+          fi
+        fi
+        if [ -z "$AUTHOR_EMAIL" ]; then
+          echo "mr-review: MR author email not available from GitLab API (missing token, empty public_email/email, or API error); falling back to last commit author email" >&2
+          AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae' $CI_COMMIT_SHA)
+        else
+          echo "mr-review: Feishu notify email resolved from MR author (GitLab user id ${AUTHOR_ID})" >&2
+        fi
         python3 .gitlab/send-feishu.py review-report.md "MR Review: !$CI_MERGE_REQUEST_IID" "$MR_URL" "$AUTHOR_EMAIL" || echo "Feishu notification failed"
       fi
 
-.claude_assist_artifacts:
-  allow_failure: true
-  artifacts:
-    when: always
-    expire_in: 3 days
-    paths:
-      - /tmp/claude-prompt.txt
-      - /tmp/claude-output.txt
-      - /tmp/ai-reviews.txt
-      - /tmp/human-feedback.txt
-      - /tmp/mr-diff.txt
-      - /tmp/commit-diff.txt
-
 # @claude: trigger + AI_FLOW_EVENT=comment
 claude-assist:
-  extends: .claude_assist_artifacts
+  allow_failure: true
   stage: ai-assist
   timeout: 20 minutes
   rules:
@@ -165,7 +150,7 @@ claude-assist:
 
       git config user.name "claude"
       git config user.email "claude@users.noreply.${CI_SERVER_HOST:-gitlab}"
-      GIT_URL="http://oauth2:${GITLAB_API_TOKEN}@$(echo $CI_SERVER_URL | sed 's|https://||;s|http://||')/${CI_PROJECT_PATH}.git"
+      GIT_URL="$(echo "$CI_PROJECT_URL" | sed 's|https://|http://oauth2:'"${GITLAB_API_TOKEN}"'@|;s|http://|http://oauth2:'"${GITLAB_API_TOKEN}"'@|').git"
       git remote set-url origin "$GIT_URL"
 
       BRANCH="${AI_FLOW_BRANCH}"
@@ -173,7 +158,34 @@ claude-assist:
       git checkout "$BRANCH"
       git pull origin "$BRANCH"
 
-      API_URL="${CI_API_V4_URL/https:/http:}"
+      NOTIFY_URL="${AI_FLOW_CONTEXT:-}"
+      if [ -z "$NOTIFY_URL" ] && [ -n "$AI_FLOW_MR_IID" ]; then
+        NOTIFY_URL="${CI_PROJECT_URL}/merge_requests/${AI_FLOW_MR_IID}"
+      elif [ -z "$NOTIFY_URL" ]; then
+        NOTIFY_URL="${CI_PROJECT_URL}/commit/${AI_FLOW_COMMIT_SHA}"
+      fi
+
+      NOTIFY_EMAIL="${AI_FLOW_AUTHOR_EMAIL:-}"
+      if [ -z "$NOTIFY_EMAIL" ]; then
+        NOTIFY_EMAIL=$(echo "${CI_COMMIT_AUTHOR:-}" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+      fi
+      if [ -z "$NOTIFY_EMAIL" ]; then
+        NOTIFY_EMAIL=$(git log -1 --pretty=format:'%ae' HEAD 2>/dev/null || true)
+      fi
+      if [ -z "$NOTIFY_EMAIL" ]; then
+        NOTIFY_EMAIL="${FEISHU_DEFAULT_NOTIFY_EMAIL:-}"
+      fi
+      if [ -z "$NOTIFY_EMAIL" ]; then
+        echo "claude-assist: NOTIFY_EMAIL empty — Feishu DMs skipped. Set FEISHU_DEFAULT_NOTIFY_EMAIL or AI_FLOW_AUTHOR_EMAIL in CI/CD, pass user.email from webhook, or ensure CI_COMMIT_AUTHOR contains <email>." >&2
+      fi
+
+      if echo "${CODE_REVIEW_REPORT_LANGUAGE:-zh}" | grep -qiE '^en'; then
+        FEISHU_TITLE_PUSHED="Claude Assist: new commit"
+        FEISHU_TITLE_OUTPUT_ONLY="Claude Assist: no new commit"
+      else
+        FEISHU_TITLE_PUSHED="Claude Assist：新增提交"
+        FEISHU_TITLE_OUTPUT_ONLY="Claude Assist：未新增提交"
+      fi
 
       if [ -n "$AI_FLOW_MR_IID" ]; then
         echo "MR mode: fetching diff and discussions for MR !${AI_FLOW_MR_IID}..."
@@ -189,11 +201,11 @@ claude-assist:
           "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}/discussions")
         echo "Classifying MR notes..."
         AI_REVIEWS=$(echo "$DISCUSSIONS" | jq -r '
-          .[] | .notes[] | select(.body | contains("<!-- AI_CODE_REVIEW -->"))
-          | "- " + .body' | head -c 10000)
+          .[] | .notes[] | select((.body // "") | contains("<!-- AI_CODE_REVIEW -->"))
+          | "- " + .body')
         HUMAN_FEEDBACK=$(echo "$DISCUSSIONS" | jq -r '
-          .[] | .notes[] | select(.body | contains("<!-- AI_CODE_REVIEW -->") | not)
-          | "- [" + .author.name + "]: " + .body' | head -c 10000)
+          .[] | .notes[] | select((.body // "") | contains("<!-- AI_CODE_REVIEW -->") | not) | select(.body != null and .body != "")
+          | "- [" + .author.name + "]: " + .body')
       else
         COMMIT_SHA="${AI_FLOW_COMMIT_SHA}"
         echo "Commit mode: fetching diff and comments for $COMMIT_SHA..."
@@ -203,11 +215,11 @@ claude-assist:
           "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${COMMIT_SHA}/comments")
         echo "Classifying commit comments..."
         AI_REVIEWS=$(echo "$COMMENTS" | jq -r '
-          .[] | select(.body | contains("<!-- AI_CODE_REVIEW -->"))
-          | "- " + .body' | head -c 10000)
+          .[] | select((.note // "") | contains("<!-- AI_CODE_REVIEW -->"))
+          | "- " + .note')
         HUMAN_FEEDBACK=$(echo "$COMMENTS" | jq -r '
-          .[] | select(.body | contains("<!-- AI_CODE_REVIEW -->") | not)
-          | "- [" + .author.name + "]: " + .body' | head -c 10000)
+          .[] | select((.note // "") | contains("<!-- AI_CODE_REVIEW -->") | not) | select(.note != null and .note != "")
+          | "- [" + .author.name + "]: " + .note')
       fi
 
       echo "AI review notes: $(echo "$AI_REVIEWS" | wc -l) lines"
@@ -250,32 +262,41 @@ claude-assist:
          - Read DIFF_FILE_PLACEHOLDER to understand code changes
          - Analyze all comments to understand fix intent
          - Modify code (use Edit/Write tools)
-         - Commit and push:
-           ```bash
-           git add .
-           git commit -m "fix: apply review suggestions from @claude [skip ci]"
-           git push origin BRANCH_PLACEHOLDER
-           ```
+         - Do not run git; the CI job commits and pushes after you exit.
 
       3. **Important Notes**:
          - Don't fix issues that are already fixed
          - If comments are unclear, be conservative
-         - Keep commit messages concise and clear
+         - Keep changes minimal and focused
+
+      ## Output language
+
+      LANGUAGE_PLACEHOLDER
 
       Begin task execution.
       EOF
 
       python3 - <<'PYEOF'
-      import re
+      import os
+
+      _lang = os.environ.get("CODE_REVIEW_REPORT_LANGUAGE", "zh").strip().lower()
+      if _lang.startswith("en"):
+          _lang_desc = "English"
+      else:
+          _lang_desc = "Chinese (Simplified)"
 
       replacements = {
           'CONTEXT_TYPE_PLACEHOLDER': '''${CONTEXT_TYPE}''',
           'DIFF_FILE_PLACEHOLDER': '''${DIFF_FILE}''',
           'HUMAN_FEEDBACK_PLACEHOLDER': open('/tmp/human-feedback.txt').read(),
           'AI_REVIEWS_PLACEHOLDER': open('/tmp/ai-reviews.txt').read(),
-          'BRANCH_PLACEHOLDER': '''${BRANCH}''',
           '${AI_FLOW_CONTEXT}': '''${AI_FLOW_CONTEXT}''',
           '${AI_FLOW_INPUT}': '''${AI_FLOW_INPUT}''',
+          'LANGUAGE_PLACEHOLDER': (
+              f"**Reply language (CI CODE_REVIEW_REPORT_LANGUAGE={os.environ.get('CODE_REVIEW_REPORT_LANGUAGE', 'zh')}):** "
+              f"Write explanations and summaries that will be posted to GitLab in {_lang_desc} only. "
+              f"Do not mix languages unless quoting code or identifiers."
+          ),
       }
 
       with open('/tmp/claude-prompt.txt', 'r') as f:
@@ -290,23 +311,98 @@ claude-assist:
 
       cat /tmp/claude-prompt.txt
 
+      claude_assist_post_gitlab() {
+        _body="$1"
+        if [ -n "$AI_FLOW_MR_IID" ]; then
+          curl -sS --request POST \
+            --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+            --data-urlencode "body=${_body}" \
+            "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}/notes"
+        else
+          curl -sS --request POST \
+            --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+            --data-urlencode "note=${_body}" \
+            "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${AI_FLOW_COMMIT_SHA}/comments"
+        fi
+      }
+
+      claude_assist_send_feishu() {
+        _title="$1"
+        _button_url="$2"
+        _template="$3"
+        _reply_body="$4"
+        if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ] && [ -n "$NOTIFY_EMAIL" ]; then
+          printf '%s\n' "$_reply_body" > /tmp/claude-feishu-reply.md
+          export FEISHU_CARD_MODE=reply
+          export FEISHU_CARD_TEMPLATE="${_template}"
+          python3 .gitlab/send-feishu.py /tmp/claude-feishu-reply.md "$_title" "$_button_url" "$NOTIFY_EMAIL" || echo "Feishu notification failed" >&2
+          unset FEISHU_CARD_MODE FEISHU_CARD_TEMPLATE
+        elif [ -z "$FEISHU_APP_ID" ] || [ -z "$FEISHU_APP_SECRET" ]; then
+          echo "claude-assist: Feishu skipped (FEISHU_APP_ID or FEISHU_APP_SECRET not set in this job)." >&2
+        fi
+      }
+
       MAX_RETRIES=2
       for i in $(seq 1 $MAX_RETRIES); do
         echo "Running Claude (attempt $i/$MAX_RETRIES)..."
 
+        PRE_CLAUDE_HEAD=$(git rev-parse HEAD)
+
         if claude --model $CLAUDE_MODEL \
           --permission-mode acceptEdits \
-          --allowedTools "Bash Read Edit Write Grep Glob" \
-          --disallowedTools "Agent WebFetch WebSearch" \
+          --allowedTools "Read Edit Write Grep Glob" \
+          --disallowedTools "Bash Agent WebFetch WebSearch" \
           --debug \
           -p < /tmp/claude-prompt.txt | tee /tmp/claude-output.txt; then
 
-          echo "Task finished"
-          if git log origin/${BRANCH}..HEAD --oneline | grep -q .; then
-            echo "New commits on branch"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            # Do not put [skip ci] in the commit message — GitLab skips all pipelines for that commit, including MR (mr-review).
+            # Push option ci.skip skips branch pipelines only; merge request pipelines still run when the MR is opened/updated.
+            git commit -m "fix: apply review suggestions from @claude" || { echo "claude-assist: git commit failed" >&2; exit 1; }
+            git push -o ci.skip=true origin "$BRANCH" || { echo "claude-assist: git push failed" >&2; exit 1; }
+          fi
+
+          CLAUDE_RESPONSE=$(cat /tmp/claude-output.txt)
+          HEAD_AFTER=$(git rev-parse HEAD)
+          COMMIT_SHA="$HEAD_AFTER"
+          COMMIT_URL="${CI_PROJECT_URL}/commit/${COMMIT_SHA}"
+
+          # Refresh remote ref so origin/BRANCH matches remote after claude push; otherwise
+          # "ahead of origin" can be wrong and we mislabel the Feishu card.
+          git fetch origin "$BRANCH" 2>/dev/null || true
+
+          POST_WITH_LINK=0
+          COMMITS_SINCE_PRE=$(git rev-list --count "${PRE_CLAUDE_HEAD}..${HEAD_AFTER}" 2>/dev/null || echo 0)
+          AHEAD_OF_ORIGIN=$(git rev-list --count "origin/${BRANCH}..HEAD" 2>/dev/null || echo 0)
+          echo "claude-assist: PRE=${PRE_CLAUDE_HEAD} HEAD=${HEAD_AFTER} commits_since_pre=${COMMITS_SINCE_PRE} ahead_of_origin=${AHEAD_OF_ORIGIN}"
+
+          if [ "${COMMITS_SINCE_PRE:-0}" -gt 0 ] 2>/dev/null; then
+            echo "New commit(s) in this job (PRE..HEAD)"
+            POST_WITH_LINK=1
+          elif [ "${AHEAD_OF_ORIGIN:-0}" -gt 0 ] 2>/dev/null; then
+            echo "Branch still ahead of origin/${BRANCH} (unpushed commits)"
+            POST_WITH_LINK=1
+          elif [ "$PRE_CLAUDE_HEAD" != "$HEAD_AFTER" ]; then
+            echo "PRE != HEAD (fallback if rev-list failed, e.g. shallow clone)"
+            POST_WITH_LINK=1
+          fi
+
+          if [ "$POST_WITH_LINK" = 1 ]; then
+            REPLY_BODY=$(printf '%s\n\n%s' "$CLAUDE_RESPONSE" "$COMMIT_URL")
+            claude_assist_post_gitlab "$REPLY_BODY"
+            claude_assist_send_feishu "$FEISHU_TITLE_PUSHED" "$COMMIT_URL" "green" "$REPLY_BODY"
           else
             echo "No new commit (no changes needed or run failed)"
+
+            if [ -n "$CLAUDE_RESPONSE" ]; then
+              REPLY_BODY="$CLAUDE_RESPONSE"
+              claude_assist_post_gitlab "$REPLY_BODY"
+              claude_assist_send_feishu "$FEISHU_TITLE_OUTPUT_ONLY" "$NOTIFY_URL" "wathet" "$REPLY_BODY"
+            fi
           fi
+
+          echo "Task finished"
           break
         else
           if [ $i -lt $MAX_RETRIES ]; then
@@ -336,19 +432,127 @@ update-memory-bank:
 
       git config user.name "claude"
       git config user.email "claude@users.noreply.${CI_SERVER_HOST:-gitlab}"
-      GIT_URL="http://oauth2:${GITLAB_API_TOKEN}@$(echo $CI_SERVER_URL | sed 's|https://||;s|http://||')/${CI_PROJECT_PATH}.git"
+      GIT_URL="$(echo "$CI_PROJECT_URL" | sed 's|https://|http://oauth2:'"${GITLAB_API_TOKEN}"'@|;s|http://|http://oauth2:'"${GITLAB_API_TOKEN}"'@|').git"
       git remote set-url origin "$GIT_URL"
 
-      echo "New code merged into $CI_COMMIT_BRANCH; update memory-bank if needed." \
-        | claude --model $CLAUDE_MODEL \
-            --permission-mode acceptEdits \
-            --disallowedTools "Bash"
+      # Feishu: prefer MR author email (same idea as mr-review). IID from commit-linked MRs, else merged-list match.
+      MB_MR_IID=""
+      MB_NOTIFY_EMAIL="${AI_FLOW_AUTHOR_EMAIL:-}"
+      if [ -n "$GITLAB_API_TOKEN" ]; then
+        MR_REL=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/merge_requests" 2>/dev/null || true)
+        MB_MR_IID=$(printf '%s' "$MR_REL" | jq -r 'if type == "array" then (.[0].iid // empty) else empty end' 2>/dev/null || true)
+        if [ -z "$MB_MR_IID" ]; then
+          MB_MR_IID=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+            "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests?state=merged&order_by=updated_at" | \
+            jq -r --arg sha "$CI_COMMIT_SHA" '.[] | select(.merge_commit_sha == $sha) | .iid' 2>/dev/null | head -1)
+        fi
+      fi
+      if [ -z "$MB_NOTIFY_EMAIL" ] && [ -n "$MB_MR_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
+        MR_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${MB_MR_IID}" 2>/dev/null || true)
+        AUTHOR_ID_MR=$(printf '%s' "$MR_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('author') or {}).get('id') or '')" 2>/dev/null || true)
+        if [ -n "$AUTHOR_ID_MR" ]; then
+          USER_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+            "${API_URL}/users/${AUTHOR_ID_MR}" 2>/dev/null || true)
+          MB_NOTIFY_EMAIL=$(printf '%s' "$USER_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('public_email') or d.get('email') or '').strip())" 2>/dev/null || true)
+        fi
+        if [ -n "$MB_NOTIFY_EMAIL" ]; then
+          echo "update-memory-bank: Feishu notify email = MR author (MR !${MB_MR_IID}, GitLab user id ${AUTHOR_ID_MR})" >&2
+        else
+          echo "update-memory-bank: MR author has no public_email/email in GitLab profile; will try fallbacks" >&2
+        fi
+      fi
+      if [ -z "$MB_NOTIFY_EMAIL" ]; then
+        MB_NOTIFY_EMAIL=$(echo "${CI_COMMIT_AUTHOR:-}" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+      fi
+      if [ -z "$MB_NOTIFY_EMAIL" ]; then
+        MB_NOTIFY_EMAIL=$(git log -1 --pretty=format:'%ae' HEAD 2>/dev/null || true)
+      fi
+      if [ -z "$MB_NOTIFY_EMAIL" ]; then
+        MB_NOTIFY_EMAIL="${FEISHU_DEFAULT_NOTIFY_EMAIL:-}"
+      fi
+      if [ -z "$MB_NOTIFY_EMAIL" ]; then
+        echo "update-memory-bank: MB_NOTIFY_EMAIL empty — Feishu DMs skipped. MR author profile has no email; set FEISHU_DEFAULT_NOTIFY_EMAIL or AI_FLOW_AUTHOR_EMAIL." >&2
+      fi
+
+      if echo "${CODE_REVIEW_REPORT_LANGUAGE:-zh}" | grep -qiE '^en'; then
+        MB_TITLE_PUSHED="Memory bank: updated"
+        MB_TITLE_OUTPUT_ONLY="Memory bank: no update needed"
+      else
+        MB_TITLE_PUSHED="Memory bank: 更新"
+        MB_TITLE_OUTPUT_ONLY="Memory bank: 无需更新"
+      fi
+
+      mb_post_mr_note() {
+        _iid="$1"
+        _body="$2"
+        curl -sS --request POST \
+          --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          --data-urlencode "body=${_body}" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${_iid}/notes"
+      }
+
+      mb_send_feishu() {
+        _title="$1"
+        _button_url="$2"
+        _template="$3"
+        _reply_body="$4"
+        if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ] && [ -n "$MB_NOTIFY_EMAIL" ]; then
+          printf '%s\n' "$_reply_body" > /tmp/memory-bank-feishu-reply.md
+          export FEISHU_CARD_MODE=reply
+          export FEISHU_CARD_TEMPLATE="${_template}"
+          python3 .gitlab/send-feishu.py /tmp/memory-bank-feishu-reply.md "$_title" "$_button_url" "$MB_NOTIFY_EMAIL" || echo "Feishu notification failed" >&2
+          unset FEISHU_CARD_MODE FEISHU_CARD_TEMPLATE
+        fi
+      }
+
+      REPORT_LANG="${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
+      case "$REPORT_LANG" in
+        en|en_*|EN*) LANG_DESC="English" ;;
+        *) LANG_DESC="Chinese (Simplified)" ;;
+      esac
+
+      # Same language line as claude-assist (LANGUAGE_PLACEHOLDER in .gitlab-ci.yml); stdout goes to MR + Feishu.
+      printf '%s\n' \
+        "New code merged into ${CI_COMMIT_BRANCH}; update memory-bank if needed." \
+        "" \
+        "## Output language" \
+        "" \
+        "**Reply language (CI CODE_REVIEW_REPORT_LANGUAGE=${REPORT_LANG}):** Write explanations and summaries that will be posted to GitLab and Feishu in ${LANG_DESC} only. Do not mix languages unless quoting code or identifiers." \
+        "" \
+        "Apply edits under memory-bank/ as needed. Your stdout will be posted to the merge request when the job finishes." \
+        > /tmp/memory-bank-prompt.txt
+
+      claude --model $CLAUDE_MODEL \
+        --permission-mode acceptEdits \
+        --disallowedTools "Bash" \
+        -p < /tmp/memory-bank-prompt.txt | tee /tmp/claude-output.txt
+
+      CLAUDE_RESPONSE=$(cat /tmp/claude-output.txt)
 
       if ! git diff --quiet memory-bank/; then
         git add memory-bank/
         git commit -m "chore: auto-update memory bank [skip ci]"
         git push origin "HEAD:${CI_COMMIT_BRANCH}"
+
+        COMMIT_SHA=$(git rev-parse HEAD)
+        COMMIT_URL="${CI_PROJECT_URL}/commit/${COMMIT_SHA}"
+        REPLY_BODY=$(printf '%s\n\n%s' "$CLAUDE_RESPONSE" "$COMMIT_URL")
+
+        if [ -n "$MB_MR_IID" ]; then
+          mb_post_mr_note "$MB_MR_IID" "$REPLY_BODY"
+          mb_send_feishu "$MB_TITLE_PUSHED" "$COMMIT_URL" "green" "$REPLY_BODY"
+        fi
+
         echo "memory-bank pushed to ${CI_COMMIT_BRANCH}"
       else
         echo "No memory-bank changes"
+
+        if [ -n "$CLAUDE_RESPONSE" ] && [ -n "$MB_MR_IID" ]; then
+          REPLY_BODY="$CLAUDE_RESPONSE"
+          MR_PAGE_URL="${CI_PROJECT_URL}/merge_requests/${MB_MR_IID}"
+          mb_post_mr_note "$MB_MR_IID" "$REPLY_BODY"
+          mb_send_feishu "$MB_TITLE_OUTPUT_ONLY" "$MR_PAGE_URL" "wathet" "$REPLY_BODY"
+        fi
       fi

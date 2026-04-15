@@ -44,6 +44,10 @@ def handle_webhook():
 
     comment = data['object_attributes']['note']
 
+    # AI code review posts from CI include this marker; body may mention @claude and must not re-trigger.
+    if '<!-- AI_CODE_REVIEW -->' in comment:
+        return jsonify({'status': 'ignored', 'reason': 'ai code review comment'}), 200
+
     # Require @claude mention
     if '@claude' not in comment.lower():
         return jsonify({'status': 'ignored', 'reason': 'no @claude mention'}), 200
@@ -57,6 +61,7 @@ def handle_webhook():
     noteable_type = data['object_attributes']['noteable_type']
     project_id = data['project']['id']
     author = data.get('user', {}).get('username', 'unknown')
+    author_email = (data.get('user') or {}).get('email') or None
 
     logger.info(f"@claude triggered by {author} on {noteable_type}")
 
@@ -78,7 +83,8 @@ def handle_webhook():
                 ref=branch,
                 instruction=instruction,
                 context_url=context_url,
-                commit_sha=commit_sha
+                commit_sha=commit_sha,
+                author_email=author_email,
             )
 
             return jsonify({
@@ -103,6 +109,7 @@ def handle_webhook():
                 context_url=context_url,
                 commit_sha=commit_sha,
                 mr_iid=mr['iid'],
+                author_email=author_email,
             )
 
             return jsonify({
@@ -149,7 +156,15 @@ def get_commit_branch(project_id, commit_sha):
         logger.error(f"Error getting commit branch: {e}")
         return None
 
-def trigger_pipeline(project_id, ref, instruction, context_url, commit_sha=None, mr_iid=None):
+def trigger_pipeline(
+    project_id,
+    ref,
+    instruction,
+    context_url,
+    commit_sha=None,
+    mr_iid=None,
+    author_email=None,
+):
     """POST to trigger a pipeline via the trigger token API."""
     url = f"{GITLAB_URL}/api/v4/projects/{project_id}/trigger/pipeline"
 
@@ -164,6 +179,8 @@ def trigger_pipeline(project_id, ref, instruction, context_url, commit_sha=None,
         variables['AI_FLOW_COMMIT_SHA'] = commit_sha
     if mr_iid is not None:
         variables['AI_FLOW_MR_IID'] = str(mr_iid)
+    if author_email:
+        variables['AI_FLOW_AUTHOR_EMAIL'] = author_email
 
     payload = {
         'token': GITLAB_TRIGGER_TOKEN,

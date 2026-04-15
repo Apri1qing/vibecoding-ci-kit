@@ -62,16 +62,22 @@ Also: **`CLAUDE.md`**, **`AGENTS.md`**.
 
 2. **GitLab → CI/CD → Variables**
 
-   | Variable | Required | Purpose |
-   |----------|----------|---------|
-   | `GITLAB_API_TOKEN` | Yes | GitLab API in CI. PAT scopes: `api` + `read_repository` + `write_repository` (write needed for `claude-assist` and `update-memory-bank` to push commits). |
-   | `GITLAB_TRIGGER_TOKEN` | Yes | Pipeline trigger token; webhook listener starts `claude-assist`. |
+   | Variable | Required | Mask | Purpose |
+   |----------|---------|------|---------|
+   | `GITLAB_API_TOKEN` | Yes | ✅ | GitLab API in CI. PAT scopes: `api` + `read_repository` + `write_repository` (write needed for `claude-assist` and `update-memory-bank` to push commits). |
+   | `GITLAB_TRIGGER_TOKEN` | Yes | ✅ | Pipeline trigger token; webhook listener starts `claude-assist`. |
+   | `ANTHROPIC_API_KEY` | Auth Method 1 | ✅ | Anthropic API key authentication. See `gitlab-runner-onboarding` §1.2 Method 1. |
+   | `ANTHROPIC_BASE_URL` | Optional | ❌ | Override Anthropic API endpoint (internal mirror or corporate proxy). Set alongside `ANTHROPIC_API_KEY` when needed. |
+   | `CLAUDE_CODE_OAUTH_TOKEN` | Auth Method 2 | ✅ | OAuth token (from `claude setup-token`; starts with `sk-ant-oat01-`). See `gitlab-runner-onboarding` §1.2 Method 2. |
 
-   | Variable | Default (see **`repo/.gitlab-ci.yml`**) | Purpose |
-   |----------|------------------------------------------|---------|
-   | `CODE_REVIEW_REPORT_LANGUAGE` | **`zh`** | Review report language; set **`en`** for English. |
-   | `CLAUDE_MODEL` | **`claude-sonnet-4-6`** | Model passed to `claude` in CI. |
-   | `FEISHU_APP_TOKEN` | *(unset)* | If unset, **Feishu** notifications are skipped; reviews still run. |
+   | Variable | Default (see **`repo/.gitlab-ci.yml`**) | Mask | Purpose |
+   |----------|------------------------------------------|------|---------|
+   | `CODE_REVIEW_REPORT_LANGUAGE` | **`zh`** | ❌ | Review report language; set **`en`** for English. |
+   | `CLAUDE_MODEL` | **`claude-sonnet-4-6`** | ❌ | Model passed to `claude` in CI. |
+   | `FEISHU_APP_ID` | *(unset)* | ❌ | Feishu app_id; if unset, Feishu notifications are skipped. |
+   | `FEISHU_APP_SECRET` | *(unset)* | ✅ | Feishu app_secret; if unset, Feishu notifications are skipped. |
+
+   > **Mask** column: ✅ = must be masked (contains secrets); ❌ = no need to mask. GitLab only allows masking when the value contains no `$`, `\n`, etc., and is ≤ 32 characters in some setups.
 
 3. **GitLab Runner host:** use **GitLab Runner** (not a generic CI agent). The OS user that runs jobs must have **`claude`** + **`jq`** on **`PATH`** (for `feature-review`, `mr-review`, `update-memory-bank`, …). **Runner must be registered and online before you push** — otherwise jobs stay `pending` indefinitely.
 
