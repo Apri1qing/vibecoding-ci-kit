@@ -4,6 +4,8 @@
 
 **vibecoding-ci-kit** 本仓库**不是业务应用代码**，而是将 **`repo/`** 目录**内容**合并进 **GitLab 应用仓库根目录**的配置与文档（CI、hooks、memory-bank 等）。说明与 [README.md](README.md) 对应；若有歧义，以英文版为准。
 
+**给 Agent：** **[强烈建议由 Agent 完成安装与接入](#给-agent)**（加载 **`vibecoding-workflow-onboarding`**）。
+
 **CI：** 目前仅支持 **GitLab**。
 
 ## 前置条件
@@ -50,6 +52,20 @@
 
 ---
 
+## 给 Agent
+
+**强烈建议**由 **AI 编程 Agent**（加载 **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)**）完成**安装与接入**：把 **`repo/`** 合并进应用仓、处理冲突、核对 GitLab 变量 / Runner / webhook 等——比纯手工 **`rsync` + 对照清单**更不容易漏步骤。若坚持手动操作，见下文 **[给人类读者](#给人类读者)**。
+
+1. 加载 **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)**（放到 `~/.claude/skills/`）。
+
+2. **Memory bank — 向用户说明是什么、如何更新**
+
+   - **是什么：** **`memory-bank/`** 是应用仓库里**长期保留的项目知识**（范围、产品、架构、技术栈、当前工作、功能/测试相关 **`docs/`**）。不是业务源码，用于人机跨会话对齐。细节见 **`AGENTS.md`** 与 **`memory-bank-framework.md`** 中的 **Reading strategy**。
+
+   - **如何更新：** 日常修改遵循 **`memory-bank-framework.md`** 的 **Update Rules** §1–2 / §4–5。用户要求 **`update memory bank`** 时，按 **§3** 对根目录下**全部核心** `*.md` 做一次核对（不要只改 `activeContext` / `progress`）。在 **`feature/*`** 上开发时，保持对应的 **`docs/features/*-tech-doc.md`** 与分支一致。**CI** 在推送到 **`integration/*`** 时会刷新 **`memory-bank/`** — 见 **[给人类读者](#给人类读者)** 第 **5** 条。
+
+---
+
 ## 给人类读者
 
 1. **前置条件**见上；在包含 **`repo/`** 的克隆目录执行：
@@ -79,18 +95,6 @@
 4. **`@claude`（在 commit / MR 下评论）：** 在**同一台 Runner 机器**上，将 **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** 拷到该环境（或放到 `~/.claude/skills/gitlab-runner-onboarding`），用 Claude 打开，并按 **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** 配置 webhook 监听器与 **`GITLAB_TRIGGER_TOKEN`**。
 
 5. **Memory bank：** **CI** — 合并进 **`integration/*`** 后，**下一次 push** 会跑 **`update-memory-bank`**（GitLab 里无需再输入提示词）；依据 **`AGENTS.md`** 与 **`.claude/rules/memory-bank-framework.md`**。**对话** — 用户说 **`update memory bank`** 时做全量核对（框架 **Update Rules §3**）；日常小改见 §1–2 / §4–5。
-
----
-
-## 给 Agent
-
-1. 加载 **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)**（放到 `~/.claude/skills/`）。
-
-2. **Memory bank — 向用户说明是什么、如何更新**
-
-   - **是什么：** **`memory-bank/`** 是应用仓库里**长期保留的项目知识**（范围、产品、架构、技术栈、当前工作、功能/测试相关 **`docs/`**）。不是业务源码，用于人机跨会话对齐。细节见 **`AGENTS.md`** 与 **`memory-bank-framework.md`** 中的 **Reading strategy**。
-
-   - **如何更新：** 日常修改遵循 **`memory-bank-framework.md`** 的 **Update Rules** §1–2 / §4–5。用户要求 **`update memory bank`** 时，按 **§3** 对根目录下**全部核心** `*.md` 做一次核对（不要只改 `activeContext` / `progress`）。在 **`feature/*`** 上开发时，保持对应的 **`docs/features/*-tech-doc.md`** 与分支一致。**CI** 在推送到 **`integration/*`** 时会刷新 **`memory-bank/`** — 见上文**「给人类读者」第 5 条**。
 
 ---
 

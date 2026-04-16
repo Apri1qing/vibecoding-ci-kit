@@ -4,6 +4,8 @@
 
 **vibecoding-ci-kit** is not application code — copy **the contents of** **`repo/`** into your **GitLab application repo root** (see [If you are a human](#if-you-are-a-human) step **1**) to add CI, hooks, and docs. English by default unless your team says otherwise.
 
+**If you are an agent:** **[install is strongly recommended](#if-you-are-an-agent)** (load **`vibecoding-workflow-onboarding`**).
+
 **CI:** **GitLab** only for now.
 
 ## Prerequisites
@@ -50,6 +52,20 @@ Also: **`CLAUDE.md`**, **`AGENTS.md`**.
 
 ---
 
+## If you are an agent
+
+**Strong recommendation:** do the **install** (merge **`repo/`** into the app repo root, resolve conflicts, and walk through GitLab variables / Runner / webhook setup) **with an AI coding agent** using **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)** — it catches edge cases and missed steps compared with manual **`rsync`** + checklist work. For a manual path, see **[If you are a human](#if-you-are-a-human)** below.
+
+1. Load **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)** (`~/.claude/skills/`).
+
+2. **Memory bank — tell the user what it is and how to use / update it**
+
+   - **What it is:** **`memory-bank/`** is the app repo’s **long-lived project knowledge** (scope, product context, architecture, stack, current work, **`docs/`** for features and tests). It is not source code; it keeps humans and agents aligned across sessions. Details: **`AGENTS.md`**, **Reading strategy** in **`memory-bank-framework.md`**.
+
+   - **How to update:** Ongoing edits follow **Update Rules** §1–2 / §4–5 in **`memory-bank-framework.md`**. When the user asks to **`update memory bank`**, do a **full reconciliation** of every **core** root file per **§3** (not only `activeContext` / `progress`). On **`feature/*`**, keep the paired **`docs/features/*-tech-doc.md`** aligned with the branch. **CI** refreshes **`memory-bank/`** on push to **`integration/*`** — see **[If you are a human](#if-you-are-a-human)** step **5**.
+
+---
+
 ## If you are a human
 
 1. **[Prerequisites](#prerequisites)** — from the clone that contains **`repo/`**:
@@ -84,18 +100,6 @@ Also: **`CLAUDE.md`**, **`AGENTS.md`**.
 4. **`@claude` (comments on commits / MRs):** on the **same Runner host**, copy **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** to that environment (or to `~/.claude/skills/gitlab-runner-onboarding`), open it in Claude, and follow **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** for the webhook listener and **`GITLAB_TRIGGER_TOKEN`** setup.
 
 5. **Memory bank:** **CI** — after merge to **`integration/*`**, **`update-memory-bank`** on the next push (no GitLab prompt); uses **`AGENTS.md`** + **`.claude/rules/memory-bank-framework.md`**. **Chat** — full pass when the user says **`update memory bank`** (framework **Update Rules §3**); smaller edits per §1–2 / §4–5.
-
----
-
-## If you are an agent
-
-1. Load **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)** (`~/.claude/skills/`).
-
-2. **Memory bank — tell the user what it is and how to use / update it**
-
-   - **What it is:** **`memory-bank/`** is the app repo’s **long-lived project knowledge** (scope, product context, architecture, stack, current work, **`docs/`** for features and tests). It is not source code; it keeps humans and agents aligned across sessions. Details: **`AGENTS.md`**, **Reading strategy** in **`memory-bank-framework.md`**.
-
-   - **How to update:** Ongoing edits follow **Update Rules** §1–2 / §4–5 in **`memory-bank-framework.md`**. When the user asks to **`update memory bank`**, do a **full reconciliation** of every **core** root file per **§3** (not only `activeContext` / `progress`). On **`feature/*`**, keep the paired **`docs/features/*-tech-doc.md`** aligned with the branch. **CI** refreshes **`memory-bank/`** on push to **`integration/*`** — see **[If you are a human](#if-you-are-a-human)** step **5** above.
 
 ---
 
