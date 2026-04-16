@@ -1,22 +1,7 @@
 #!/usr/bin/env python3
-"""
-Send a Feishu (Lark) interactive card for GitLab CI.
-
-Requires env:
-  FEISHU_APP_ID — Feishu app_id (tenant_access_token auth).
-  FEISHU_APP_SECRET — Feishu app_secret.
-  CI_PROJECT_ID — GitLab project ID (token cache isolation).
-  CODE_REVIEW_REPORT_LANGUAGE — optional: zh (default) or en (card labels).
-
-Optional env:
-  FEISHU_CARD_MODE — `reply` for claude-assist / update-memory-bank: card body is the same
-    markdown as posted to GitLab (file = full reply text; normalized + length-capped for display).
-    Omit for feature-review / mr-review: card shows risk overview, author, first ## section only.
-  FEISHU_CARD_TEMPLATE — when FEISHU_CARD_MODE=reply: header color
-    blue|wathet|turquoise|green|yellow|orange|red|violet|grey (default blue).
-
-Docs: https://open.feishu.cn/document/
-"""
+"""Feishu interactive card for GitLab CI. Needs FEISHU_APP_ID, FEISHU_APP_SECRET, CI_PROJECT_ID.
+Optional: CODE_REVIEW_REPORT_LANGUAGE (zh|en), FEISHU_CARD_MODE=reply, FEISHU_CARD_TEMPLATE (header color).
+https://open.feishu.cn/document/"""
 import json
 import urllib.request
 import urllib.error
@@ -43,7 +28,6 @@ _SUMMARY_MAX = 1800
 
 
 def get_token_cache_path():
-    """Return token cache file path: $HOME/.feishu-token.d/$CI_PROJECT_ID/token"""
     home = Path.home()
     project_id = os.environ.get("CI_PROJECT_ID", "default")
     cache_dir = home / ".feishu-token.d" / project_id
@@ -52,7 +36,6 @@ def get_token_cache_path():
 
 
 def get_tenant_access_token():
-    """Get tenant_access_token from cache or fetch new one."""
     app_id = os.environ.get("FEISHU_APP_ID")
     app_secret = os.environ.get("FEISHU_APP_SECRET")
 
@@ -164,7 +147,6 @@ def _reply_header_template() -> str:
 
 
 def get_open_id_by_email(email: str, app_token: str):
-    """Resolve Feishu open_id for an email via Contact API."""
     url = (
         "https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id"
         "?user_id_type=open_id"
@@ -260,14 +242,54 @@ def _format_table_block(block: list) -> str:
     return "\n".join(lines_out)
 
 
+_FENCED_BLOCK_RE = re.compile(r"```[a-zA-Z0-9_-]*\r?\n[\s\S]*?```", re.MULTILINE)
+
+
+def _protect_fenced_blocks(text: str) -> tuple[str, dict[str, str]]:
+    store: dict[str, str] = {}
+    n = [0]
+
+    def repl(m) -> str:
+        key = f"__FEISHU_FENCE_{n[0]}__"
+        store[key] = m.group(0)
+        n[0] += 1
+        return key
+
+    return _FENCED_BLOCK_RE.sub(repl, text), store
+
+
+def _restore_fenced_blocks(text: str, store: dict[str, str]) -> str:
+    for key, val in store.items():
+        text = text.replace(key, val)
+    return text
+
+
+def normalize_headings_for_lark_md(text: str) -> str:
+    lines = text.replace("\r\n", "\n").split("\n")
+    out: list = []
+    for line in lines:
+        stripped = line.strip()
+        m = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+        if m:
+            title = m.group(2).strip()
+            level = len(m.group(1))
+            indent = "　" * max(0, level - 3) if level > 3 else ""
+            out.append(f"{indent}**{title}**")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def normalize_summary_for_feishu(text: str) -> str:
     t = convert_markdown_tables_to_text(text)
+    t, fence_store = _protect_fenced_blocks(t)
+    t = normalize_headings_for_lark_md(t)
+    t = _restore_fenced_blocks(t, fence_store)
     t = re.sub(r"\n{3,}", "\n\n", t)
     return t.strip()
 
 
 def extract_first_h2_section(text: str) -> str:
-    """First ## ... section (not ###); includes the heading line."""
     lines = text.replace("\r\n", "\n").split("\n")
     start_i = None
     for i, line in enumerate(lines):
@@ -341,7 +363,6 @@ if not feishu_open_id:
     sys.exit(0)
 
 if _reply_notify_mode():
-    # Same file content as GitLab note/body; normalize for lark_md; may truncate for card size.
     summary_text = truncate_for_card(normalize_summary_for_feishu(report.strip()))
     template = _reply_header_template()
     header_title = (card_title or "Claude")[:200]
@@ -397,7 +418,6 @@ else:
 
     first_section = extract_first_h2_section(report)
     if not first_section.strip():
-        # No ## heading: show start of report (models may omit headings).
         raw = report.strip()
         first_section = raw[:2000] if raw else L["default_summary"]
     summary_text = truncate_for_card(normalize_summary_for_feishu(first_section))
