@@ -53,10 +53,9 @@ feature-review:
         echo "diff_range: ${DIFF_RANGE}"
         echo "branch: ${CI_COMMIT_BRANCH}"
         echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
-        echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
+        echo 'ci_code_review: .claude/skills/ci-code-review'
       } | claude --model $CLAUDE_MODEL \
           --allowedTools "Bash Read Grep Glob" \
-          --debug \
           -p | tee review-report.md
 
       if [ -n "$GITLAB_API_TOKEN" ]; then
@@ -101,14 +100,25 @@ mr-review:
         echo "mr_source: ${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
         echo "mr_target: ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
         echo "review_report_language: ${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
-        echo 'ci_code_review: .claude/skills/ci-code-review/SKILL.md'
+        echo 'ci_code_review: .claude/skills/ci-code-review'
       } | claude --model $CLAUDE_MODEL \
           --allowedTools "Bash Read Grep Glob" \
-          --debug \
           -p | tee review-report.md
 
+      MR_JSON=""
+      MR_AUTHOR_USERNAME=""
       if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
-        COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n\n%s" "$(cat review-report.md)")
+        MR_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}" 2>/dev/null || true)
+        MR_AUTHOR_USERNAME=$(printf '%s' "$MR_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('author') or {}).get('username') or '')" 2>/dev/null || true)
+      fi
+
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
+        if [ -n "$MR_AUTHOR_USERNAME" ]; then
+          COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n@%s\n\n%s" "$MR_AUTHOR_USERNAME" "$(cat review-report.md)")
+        else
+          COMMENT_BODY=$(printf "<!-- AI_CODE_REVIEW -->\n\n%s" "$(cat review-report.md)")
+        fi
         curl -sS --request POST \
           --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
           --data-urlencode "body=${COMMENT_BODY}" \
@@ -118,8 +128,10 @@ mr-review:
       if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
         AUTHOR_EMAIL=""
         if [ -n "$GITLAB_API_TOKEN" ] && [ -n "$CI_MERGE_REQUEST_IID" ]; then
-          MR_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
-            "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}" 2>/dev/null || true)
+          if [ -z "$MR_JSON" ]; then
+            MR_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+              "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}" 2>/dev/null || true)
+          fi
           AUTHOR_ID=$(printf '%s' "$MR_JSON" | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('author') or {}).get('id') or '')" 2>/dev/null || true)
           if [ -n "$AUTHOR_ID" ]; then
             USER_JSON=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
@@ -166,26 +178,33 @@ claude-assist:
       fi
 
       NOTIFY_EMAIL="${AI_FLOW_AUTHOR_EMAIL:-}"
-      if [ -z "$NOTIFY_EMAIL" ]; then
-        NOTIFY_EMAIL=$(echo "${CI_COMMIT_AUTHOR:-}" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
-      fi
-      if [ -z "$NOTIFY_EMAIL" ]; then
-        NOTIFY_EMAIL=$(git log -1 --pretty=format:'%ae' HEAD 2>/dev/null || true)
-      fi
-      if [ -z "$NOTIFY_EMAIL" ]; then
+      NOTIFY_EMAIL_SOURCE=""
+      if [ -n "$NOTIFY_EMAIL" ]; then
+        NOTIFY_EMAIL_SOURCE="AI_FLOW_AUTHOR_EMAIL"
+      else
         NOTIFY_EMAIL="${FEISHU_DEFAULT_NOTIFY_EMAIL:-}"
+        if [ -n "$NOTIFY_EMAIL" ]; then
+          NOTIFY_EMAIL_SOURCE="FEISHU_DEFAULT_NOTIFY_EMAIL"
+        fi
       fi
-      if [ -z "$NOTIFY_EMAIL" ]; then
-        echo "claude-assist: NOTIFY_EMAIL empty — Feishu DMs skipped. Set FEISHU_DEFAULT_NOTIFY_EMAIL or AI_FLOW_AUTHOR_EMAIL in CI/CD, pass user.email from webhook, or ensure CI_COMMIT_AUTHOR contains <email>." >&2
+      if [ -n "$NOTIFY_EMAIL" ]; then
+        echo "claude-assist: Feishu NOTIFY_EMAIL source=${NOTIFY_EMAIL_SOURCE} (AI_FLOW_AUTHOR_EMAIL=commenter from webhook/API; FEISHU_DEFAULT_NOTIFY_EMAIL=ops fallback, not commenter identity)" >&2
+        echo "claude-assist: Feishu NOTIFY_EMAIL=${NOTIFY_EMAIL}" >&2
+      else
+        echo "claude-assist: NOTIFY_EMAIL empty — Feishu DMs skipped. Webhook must pass AI_FLOW_AUTHOR_EMAIL (commenter via user.email or GET /users/:id), or set FEISHU_DEFAULT_NOTIFY_EMAIL." >&2
       fi
 
-      if echo "${CODE_REVIEW_REPORT_LANGUAGE:-zh}" | grep -qiE '^en'; then
-        FEISHU_TITLE_PUSHED="Claude Assist: new commit"
-        FEISHU_TITLE_OUTPUT_ONLY="Claude Assist: no new commit"
-      else
-        FEISHU_TITLE_PUSHED="Claude Assist：新增提交"
-        FEISHU_TITLE_OUTPUT_ONLY="Claude Assist：未新增提交"
-      fi
+      REPORT_LANG="${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
+      case "$REPORT_LANG" in
+        en|en_*|EN*)
+          FEISHU_TITLE_PUSHED="Claude Assist: new commit"
+          FEISHU_TITLE_OUTPUT_ONLY="Claude Assist: no new commit"
+          ;;
+        *)
+          FEISHU_TITLE_PUSHED="Claude Assist：新增提交"
+          FEISHU_TITLE_OUTPUT_ONLY="Claude Assist：未新增提交"
+          ;;
+      esac
 
       if [ -n "$AI_FLOW_MR_IID" ]; then
         echo "MR mode: fetching diff and discussions for MR !${AI_FLOW_MR_IID}..."
@@ -313,15 +332,26 @@ claude-assist:
 
       claude_assist_post_gitlab() {
         _body="$1"
+        # Prefix stops webhook-listener from re-triggering when the reply quotes @claude or # @claude:
+        case "$_body" in
+          *'<!-- AI_CODE_REVIEW -->'*) _gitlab_body="$_body" ;;
+          *)
+            if [ -n "${AI_FLOW_AUTHOR_USERNAME:-}" ]; then
+              _gitlab_body=$(printf '%s\n@%s\n\n%s' '<!-- AI_CODE_REVIEW -->' "$AI_FLOW_AUTHOR_USERNAME" "$_body")
+            else
+              _gitlab_body=$(printf '%s\n\n%s' '<!-- AI_CODE_REVIEW -->' "$_body")
+            fi
+            ;;
+        esac
         if [ -n "$AI_FLOW_MR_IID" ]; then
           curl -sS --request POST \
             --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
-            --data-urlencode "body=${_body}" \
+            --data-urlencode "body=${_gitlab_body}" \
             "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${AI_FLOW_MR_IID}/notes"
         else
           curl -sS --request POST \
             --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
-            --data-urlencode "note=${_body}" \
+            --data-urlencode "note=${_gitlab_body}" \
             "${API_URL}/projects/${CI_PROJECT_ID}/repository/commits/${AI_FLOW_COMMIT_SHA}/comments"
         fi
       }
@@ -339,6 +369,8 @@ claude-assist:
           unset FEISHU_CARD_MODE FEISHU_CARD_TEMPLATE
         elif [ -z "$FEISHU_APP_ID" ] || [ -z "$FEISHU_APP_SECRET" ]; then
           echo "claude-assist: Feishu skipped (FEISHU_APP_ID or FEISHU_APP_SECRET not set in this job)." >&2
+        elif [ -z "$NOTIFY_EMAIL" ]; then
+          echo "claude-assist: Feishu skipped (NOTIFY_EMAIL empty)." >&2
         fi
       }
 
@@ -352,7 +384,6 @@ claude-assist:
           --permission-mode acceptEdits \
           --allowedTools "Read Edit Write Grep Glob" \
           --disallowedTools "Bash Agent WebFetch WebSearch" \
-          --debug \
           -p < /tmp/claude-prompt.txt | tee /tmp/claude-output.txt; then
 
           if [ -n "$(git status --porcelain)" ]; then
@@ -476,20 +507,35 @@ update-memory-bank:
         echo "update-memory-bank: MB_NOTIFY_EMAIL empty — Feishu DMs skipped. MR author profile has no email; set FEISHU_DEFAULT_NOTIFY_EMAIL or AI_FLOW_AUTHOR_EMAIL." >&2
       fi
 
-      if echo "${CODE_REVIEW_REPORT_LANGUAGE:-zh}" | grep -qiE '^en'; then
-        MB_TITLE_PUSHED="Memory bank: updated"
-        MB_TITLE_OUTPUT_ONLY="Memory bank: no update needed"
-      else
-        MB_TITLE_PUSHED="Memory bank: 更新"
-        MB_TITLE_OUTPUT_ONLY="Memory bank: 无需更新"
+      MB_TITLE_PUSHED="Memory bank: updated"
+      MB_TITLE_OUTPUT_ONLY="Memory bank: no update needed"
+
+      # @ push user (integration); fallback merged_by when GITLAB_USER_LOGIN empty (e.g. some bot merges).
+      MB_MENTION_USERNAME="${GITLAB_USER_LOGIN:-}"
+      if [ -z "$MB_MENTION_USERNAME" ] && [ -n "$MB_MR_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
+        MB_MR_JSON_MERGER=$(curl -sS --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
+          "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${MB_MR_IID}" 2>/dev/null || true)
+        MB_MENTION_USERNAME=$(printf '%s' "$MB_MR_JSON_MERGER" | python3 -c "import sys,json;d=json.load(sys.stdin);m=d.get('merged_by') or {};print(m.get('username') or '')" 2>/dev/null || true)
       fi
 
       mb_post_mr_note() {
         _iid="$1"
         _body="$2"
+        _mention="${3:-}"
+        # Same marker as feature-review / mr-review / claude_assist_post_gitlab (webhook ignores re-trigger).
+        case "$_body" in
+          *'<!-- AI_CODE_REVIEW -->'*) _gitlab_body="$_body" ;;
+          *)
+            if [ -n "$_mention" ]; then
+              _gitlab_body=$(printf '%s\n@%s\n\n%s' '<!-- AI_CODE_REVIEW -->' "$_mention" "$_body")
+            else
+              _gitlab_body=$(printf '%s\n\n%s' '<!-- AI_CODE_REVIEW -->' "$_body")
+            fi
+            ;;
+        esac
         curl -sS --request POST \
           --header "PRIVATE-TOKEN: $GITLAB_API_TOKEN" \
-          --data-urlencode "body=${_body}" \
+          --data-urlencode "body=${_gitlab_body}" \
           "${API_URL}/projects/${CI_PROJECT_ID}/merge_requests/${_iid}/notes"
       }
 
@@ -515,7 +561,7 @@ update-memory-bank:
 
       # Same language line as claude-assist (LANGUAGE_PLACEHOLDER in .gitlab-ci.yml); stdout goes to MR + Feishu.
       printf '%s\n' \
-        "New code merged into ${CI_COMMIT_BRANCH}; update memory-bank if needed." \
+        "update memory bank." \
         "" \
         "## Output language" \
         "" \
@@ -541,7 +587,7 @@ update-memory-bank:
         REPLY_BODY=$(printf '%s\n\n%s' "$CLAUDE_RESPONSE" "$COMMIT_URL")
 
         if [ -n "$MB_MR_IID" ]; then
-          mb_post_mr_note "$MB_MR_IID" "$REPLY_BODY"
+          mb_post_mr_note "$MB_MR_IID" "$REPLY_BODY" "$MB_MENTION_USERNAME"
           mb_send_feishu "$MB_TITLE_PUSHED" "$COMMIT_URL" "green" "$REPLY_BODY"
         fi
 
@@ -552,7 +598,7 @@ update-memory-bank:
         if [ -n "$CLAUDE_RESPONSE" ] && [ -n "$MB_MR_IID" ]; then
           REPLY_BODY="$CLAUDE_RESPONSE"
           MR_PAGE_URL="${CI_PROJECT_URL}/merge_requests/${MB_MR_IID}"
-          mb_post_mr_note "$MB_MR_IID" "$REPLY_BODY"
+          mb_post_mr_note "$MB_MR_IID" "$REPLY_BODY" "$MB_MENTION_USERNAME"
           mb_send_feishu "$MB_TITLE_OUTPUT_ONLY" "$MR_PAGE_URL" "wathet" "$REPLY_BODY"
         fi
       fi
