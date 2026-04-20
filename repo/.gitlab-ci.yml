@@ -295,6 +295,9 @@ claude-assist:
       Begin task execution.
       EOF
 
+      # Quoted heredocs below do not expand $VAR; pass shell values via env for Python.
+      export CONTEXT_TYPE DIFF_FILE
+
       python3 - <<'PYEOF'
       import os
 
@@ -305,12 +308,12 @@ claude-assist:
           _lang_desc = "Chinese (Simplified)"
 
       replacements = {
-          'CONTEXT_TYPE_PLACEHOLDER': '''${CONTEXT_TYPE}''',
-          'DIFF_FILE_PLACEHOLDER': '''${DIFF_FILE}''',
+          'CONTEXT_TYPE_PLACEHOLDER': os.environ.get("CONTEXT_TYPE", ""),
+          'DIFF_FILE_PLACEHOLDER': os.environ.get("DIFF_FILE", ""),
           'HUMAN_FEEDBACK_PLACEHOLDER': open('/tmp/human-feedback.txt').read(),
           'AI_REVIEWS_PLACEHOLDER': open('/tmp/ai-reviews.txt').read(),
-          '${AI_FLOW_CONTEXT}': '''${AI_FLOW_CONTEXT}''',
-          '${AI_FLOW_INPUT}': '''${AI_FLOW_INPUT}''',
+          '${AI_FLOW_CONTEXT}': os.environ.get("AI_FLOW_CONTEXT", ""),
+          '${AI_FLOW_INPUT}': os.environ.get("AI_FLOW_INPUT", ""),
           'LANGUAGE_PLACEHOLDER': (
               f"**Reply language (CI CODE_REVIEW_REPORT_LANGUAGE={os.environ.get('CODE_REVIEW_REPORT_LANGUAGE', 'zh')}):** "
               f"Write explanations and summaries that will be posted to GitLab in {_lang_desc} only. "
