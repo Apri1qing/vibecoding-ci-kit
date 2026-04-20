@@ -507,9 +507,6 @@ update-memory-bank:
         echo "update-memory-bank: MB_NOTIFY_EMAIL empty — Feishu DMs skipped. MR author profile has no email; set FEISHU_DEFAULT_NOTIFY_EMAIL or AI_FLOW_AUTHOR_EMAIL." >&2
       fi
 
-      MB_TITLE_PUSHED="Memory bank: updated"
-      MB_TITLE_OUTPUT_ONLY="Memory bank: no update needed"
-
       # @ push user (integration); fallback merged_by when GITLAB_USER_LOGIN empty (e.g. some bot merges).
       MB_MENTION_USERNAME="${GITLAB_USER_LOGIN:-}"
       if [ -z "$MB_MENTION_USERNAME" ] && [ -n "$MB_MR_IID" ] && [ -n "$GITLAB_API_TOKEN" ]; then
@@ -555,8 +552,16 @@ update-memory-bank:
 
       REPORT_LANG="${CODE_REVIEW_REPORT_LANGUAGE:-zh}"
       case "$REPORT_LANG" in
-        en|en_*|EN*) LANG_DESC="English" ;;
-        *) LANG_DESC="Chinese (Simplified)" ;;
+        en|en_*|EN*)
+          LANG_DESC="English"
+          MB_TITLE_PUSHED="Memory bank: updated"
+          MB_TITLE_OUTPUT_ONLY="Memory bank: no update needed"
+          ;;
+        *)
+          LANG_DESC="Chinese (Simplified)"
+          MB_TITLE_PUSHED="Memory bank：已更新"
+          MB_TITLE_OUTPUT_ONLY="Memory bank：无需更新"
+          ;;
       esac
 
       # Same language line as claude-assist (LANGUAGE_PLACEHOLDER in .gitlab-ci.yml); stdout goes to MR + Feishu.
