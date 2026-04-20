@@ -24,6 +24,18 @@ card_title = sys.argv[2]
 review_url = sys.argv[3]
 author_email = sys.argv[4]
 
+print(
+    "send-feishu: author_email (argv[4]) used for Feishu open_id lookup: "
+    f"{author_email!r}",
+    file=sys.stderr,
+)
+if not (author_email or "").strip():
+    print(
+        "send-feishu: author_email empty; skipping Feishu DM",
+        file=sys.stderr,
+    )
+    sys.exit(0)
+
 _SUMMARY_MAX = 1800
 
 
@@ -96,7 +108,6 @@ def resolve_ui_lang() -> str:
 
 UI = {
     "zh": {
-        "default_summary": "审查已完成。",
         "line_high": "🔴 高风险 × {}",
         "line_medium": "🟡 中风险 × {}",
         "line_low": "🟢 低风险 × {}",
@@ -110,7 +121,6 @@ UI = {
         "view_gitlab": "打开 GitLab",
     },
     "en": {
-        "default_summary": "Review completed.",
         "line_high": "🔴 High × {}",
         "line_medium": "🟡 Medium × {}",
         "line_low": "🟢 Low × {}",
@@ -289,27 +299,6 @@ def normalize_summary_for_feishu(text: str) -> str:
     return t.strip()
 
 
-def extract_first_h2_section(text: str) -> str:
-    lines = text.replace("\r\n", "\n").split("\n")
-    start_i = None
-    for i, line in enumerate(lines):
-        s = line.strip()
-        if s.startswith("##") and not s.startswith("###"):
-            start_i = i
-            break
-    if start_i is None:
-        return ""
-    out: list = []
-    for j in range(start_i, len(lines)):
-        line = lines[j]
-        if j > start_i:
-            s = line.strip()
-            if s.startswith("##") and not s.startswith("###"):
-                break
-        out.append(line)
-    return "\n".join(out).strip()
-
-
 def extract_risk_count(report_text: str, patterns: list) -> int:
     for pattern in patterns:
         match = re.search(pattern, report_text)
@@ -346,6 +335,16 @@ def truncate_for_card(text: str) -> str:
     return text[: _SUMMARY_MAX - 3] + "..."
 
 
+def _author_div(lang: dict, email: str) -> dict:
+    return {
+        "tag": "div",
+        "text": {
+            "tag": "lark_md",
+            "content": f"**{lang['author']}**\n{email}",
+        },
+    }
+
+
 feishu_app_token = get_tenant_access_token()
 lang = resolve_ui_lang()
 L = UI[lang]
@@ -353,7 +352,7 @@ L = UI[lang]
 with open(report_file, encoding="utf-8") as f:
     report = f.read()
 
-feishu_open_id = get_open_id_by_email(author_email, feishu_app_token)
+feishu_open_id = get_open_id_by_email(author_email.strip(), feishu_app_token)
 if not feishu_open_id:
     print(
         "Skipping Feishu DM: Contact API returned no open_id for this email. "
@@ -381,13 +380,7 @@ if _reply_notify_mode():
                     "content": summary_text,
                 },
             },
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": f"**{L['author']}**\n{author_email}",
-                },
-            },
+            _author_div(L, author_email),
             {"tag": "hr"},
             {
                 "tag": "action",
@@ -416,12 +409,6 @@ else:
         risk_lines.append(L["line_low"].format(low_risk))
     risk_text = "\n".join(risk_lines) if risk_lines else L["no_notable_risks"]
 
-    first_section = extract_first_h2_section(report)
-    if not first_section.strip():
-        raw = report.strip()
-        first_section = raw[:2000] if raw else L["default_summary"]
-    summary_text = truncate_for_card(normalize_summary_for_feishu(first_section))
-
     if high_risk > 0:
         template = "red"
         header_title = L["title_high"].format(card_title)
@@ -432,48 +419,37 @@ else:
         template = "green"
         header_title = L["title_pass"].format(card_title)
 
+    elements: list = [
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**{L['risk_overview']}**\n{risk_text}",
+            },
+        },
+        _author_div(L, author_email),
+        {"tag": "hr"},
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": L["view_full"]},
+                    "type": "primary",
+                    "url": review_url,
+                }
+            ],
+        },
+    ]
+
     card_content = {
         "config": {"wide_screen_mode": True},
         "header": {
             "title": {"tag": "plain_text", "content": header_title},
             "template": template,
         },
-        "elements": [
-            {"tag": "hr"},
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": f"**{L['risk_overview']}**\n{risk_text}",
-                },
-            },
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": f"**{L['author']}**\n{author_email}",
-                },
-            },
-            {"tag": "hr"},
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": summary_text,
-                },
-            },
-            {
-                "tag": "action",
-                "actions": [
-                    {
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": L["view_full"]},
-                        "type": "primary",
-                        "url": review_url,
-                    }
-                ],
-            },
-        ],
+        "elements": elements,
     }
 
 url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
