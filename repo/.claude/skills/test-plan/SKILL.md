@@ -43,7 +43,7 @@ Examples:
   { ... }
   ```
 - **Assertions**:
-  1. return_code = 0 (or expected error code)
+  1. {success / error criteria per spec}
   2. {field-level checks}
   3. {boundary / error handling}
 - **Expected outcome**: {brief expected response}

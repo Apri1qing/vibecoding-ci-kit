@@ -5,7 +5,7 @@ description: AI code review triggered by GitLab CI (feature-review / mr-review);
 
 # CI Code Review (GitLab CI)
 
-This skill matches **`.gitlab-ci.yml` jobs `feature-review` / `mr-review`**: CI writes `ci_code_review: .claude/skills/ci-code-review/SKILL.md` on stdin (this file). **Read this file first**, then produce output using the sources below and the report structure.
+This skill matches **`.gitlab-ci.yml` jobs `feature-review` / `mr-review`**. **Read this file first**, then produce output using the sources below and the report structure.
 
 ## stdin: `review_report_language`
 
