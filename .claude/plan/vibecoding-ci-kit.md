@@ -7,7 +7,7 @@
 ## 文档地位（事实来源）
 
 - **流水线行为**以业务仓库根目录 **`.gitlab-ci.yml`**（由 **`repo/.gitlab-ci.yml`** 合并而来）为准。
-- **审查 stdin 与报告结构**以 **`repo/.claude/skills/ci-code-review/SKILL.md`** 为准。
+- **审查 stdin**：`ci_code_review` 值为 **`.claude/skills/ci-code-review`**（与 `repo/.gitlab-ci.yml` 一致）；细则以该目录 skill 为准。
 - **Memory bank 与分支约定**以 **`repo/.claude/rules/memory-bank-framework.md`** 为准。
 
 若本文与上述文件或 CI 不一致，**以 `repo/.gitlab-ci.yml` 与 rule/skill 为准**。
@@ -45,7 +45,7 @@
 **审查行为与报告格式（事实来源）**：
 
 - **分支 ↔ tech-doc 文件命名**：`repo/.claude/rules/memory-bank-framework.md`（「Feature branch ↔ tech-doc file naming」）
-- **报告结构、Level 1/2 必读材料**：`repo/.claude/skills/ci-code-review/SKILL.md`
+- **报告结构、Level 1/2 必读材料**：`repo/.claude/skills/ci-code-review`
 - **`claude -p` 的 stdin 键值**：见下节「GitLab CI 审查 stdin」（与 **`repo/.gitlab-ci.yml`** 写入一致）
 
 本文档侧重**部署与运维**；若与上述 rule/skill 冲突，以 **`repo/`** 内 rule/skill 与 CI 为准。
@@ -73,11 +73,9 @@
 | `mr_source` | — | MR 源分支 |
 | `mr_target` | — | MR 目标分支 |
 | `review_report_language` | `${CODE_REVIEW_REPORT_LANGUAGE:-zh}`（`zh` 或 `en`） | 同 |
-| `ci_code_review` | **ci-code-review** skill 路径：`.claude/skills/ci-code-review/SKILL.md`（审查时 Read 该文件并按其中要求输出） | 同 |
+| `ci_code_review` | `.claude/skills/ci-code-review` | 同 |
 
-`ci_code_review` 与 skill **ci-code-review** 对应（键名用下划线，仓库路径用连字符目录名）。
-
-审查须 Read stdin 中 `ci_code_review` 指向的 skill 文件并执行；`review_report_language` 与 **ci-code-review** skill 中「stdin: review_report_language」一致，用于整份 Markdown 报告语言。
+`review_report_language` 与 skill 中 stdin 约定一致，用于整份报告语言。
 
 **`.gitlab-ci.yml` 默认变量（可在 GitLab CI/CD Variables 覆盖）**：
 
@@ -199,7 +197,7 @@ git commit & **`git push -o ci.skip=true`**（避免分支 pipeline 循环；与
 - ✅ **评论分类**：CI 脚本通过 jq 预处理，区分 AI review 和人类 feedback
 - ✅ **优先级**：人类 feedback > AI review > 用户当前指令
 - ✅ **MR 场景**：查看整个 MR 的变更，不只是最后一个 commit
-- ✅ **防止循环**：`git push -o ci.skip=true`（**不**在 commit message 中使用 `[skip ci]`，以免 MR 相关流水线被跳过）
+- ✅ **防止循环**：`git push -o ci.skip=true`（**不**在 commit message 中使用 `[skip ci]`，以免 MR 相关流水线被跳过）；Webhook 侧忽略带 `<!-- AI_CODE_REVIEW -->` 的评论；回帖由 CI 统一加该标记（见上文 Trigger 变量与「GitLab 评论体」）
 
 ---
 
@@ -298,6 +296,12 @@ git commit & **`git push -o ci.skip=true`**（避免分支 pipeline 循环；与
 | `AI_FLOW_CONTEXT` | 评论/MR 链接 |
 | `AI_FLOW_COMMIT_SHA` | Commit 评论场景必传；MR 场景可传 `last_commit` 供对账 |
 | `AI_FLOW_MR_IID` | **仅 MR 评论**传入 MR 的 IID，CI 才能走 MR 全量 diff；Commit 评论勿传 |
+| `AI_FLOW_AUTHOR_EMAIL` | 评论者邮箱（listener：`user.email` 或 `GET /api/v4/users/:id`） |
+| `AI_FLOW_AUTHOR_USERNAME` | 评论者 GitLab `username`（`claude-assist` 发帖 `@` 用） |
+
+**Webhook listener（`runner/.../webhook-listener.py`）**：仅处理 `object_kind == note`。若正文含 `<!-- AI_CODE_REVIEW -->` 则忽略（避免 CI/AI 回帖再 Trigger）。否则全文需含 `@claude`（子串，不区分大小写）。`note_commenter_user` 合并顶层 `user` 与 `object_attributes.author` / `author_id`，供邮箱与 username；`trigger_pipeline` 写入上表变量。
+
+**GitLab 评论体（均以 `<!-- AI_CODE_REVIEW -->` 开头，避免 webhook 循环）**：`feature-review` 另起一行 `@GITLAB_USER_LOGIN`；`mr-review` 若有 MR `author.username` 则 `@` 之；`claude-assist` 由 `claude_assist_post_gitlab` 加标记，非空则 `@AI_FLOW_AUTHOR_USERNAME`；`update-memory-bank` 的 `mb_post_mr_note` 第三参为 `@` 用户名：优先 `GITLAB_USER_LOGIN`，否则 MR `merged_by.username`。
 
 **创建飞书应用（`FEISHU_APP_ID` + `FEISHU_APP_SECRET`）**：
 1. 进入飞书开放平台：https://open.feishu.cn/
@@ -606,7 +610,7 @@ HUMAN_FEEDBACK=$(echo "$MR_DISCUSSIONS" | jq -r '
 **说明**：
 - 使用 Personal Access Token 发表评论时，评论作者是 token 所属用户，而不是独立的 bot 账号
 - 因此只依赖 `<!-- AI_CODE_REVIEW -->` 标记来区分 AI 和人类评论
-- `feature-review` 和 `mr-review` job 发表的评论都会自动添加此标记
+- `feature-review`、`mr-review`、`claude-assist` 回帖、`mb_post_mr_note` 均带该标记（assist/MB 由脚本 `printf` 前缀）
 
 ---
 
@@ -634,8 +638,8 @@ HUMAN_FEEDBACK=$(echo "$MR_DISCUSSIONS" | jq -r '
 |-----|------------------|
 | **feature-review** | 当前流水线 **`CI_COMMIT_SHA`** 上**最后一笔提交**的作者邮箱：`git log -1 --format=%ae` |
 | **mr-review** | 优先：**GitLab API** 取 MR **`author.id`** → **`GET /users/:id`** 的 **`public_email`** 或 **`email`**；若为空或失败则**回退**为 `git log -1 %ae`（与旧行为一致） |
-| **claude-assist** | 依序：`AI_FLOW_AUTHOR_EMAIL` → `CI_COMMIT_AUTHOR` 解析 → `git log` → **`FEISHU_DEFAULT_NOTIFY_EMAIL`** |
-| **update-memory-bank** | 优先：**MR author**（`GET .../commits/:sha/merge_requests` 或 merged 列表匹配 `merge_commit_sha` → **`GET /merge_requests/:iid`** 的 **`author.id`** → **`GET /users/:id`** 的 **`public_email`** / **`email`**）；**否则** `AI_FLOW_AUTHOR_EMAIL` → `CI_COMMIT_AUTHOR` → `git log` → **`FEISHU_DEFAULT_NOTIFY_EMAIL`** |
+| **claude-assist** | `AI_FLOW_AUTHOR_EMAIL` → **`FEISHU_DEFAULT_NOTIFY_EMAIL`** |
+| **update-memory-bank** | `AI_FLOW_AUTHOR_EMAIL` → MR author（API 同 mr-review 思路）→ `CI_COMMIT_AUTHOR` 邮箱 → `git log` → **`FEISHU_DEFAULT_NOTIFY_EMAIL`** |
 
 **语言（与审查报告一致）**：环境变量 **`CODE_REVIEW_REPORT_LANGUAGE`**（默认 `zh`）。子进程继承，**无需额外传参**。
 
@@ -820,7 +824,7 @@ update-memory-bank: git commit -m "chore: auto-update memory bank [skip ci]"
 |------|------|---------|
 | Review 成功率 | > 95% | GitLab CI 统计 |
 | @claude 响应时间 | < 5 分钟 | Webhook 监听器日志 |
-| Token 消耗 | < 50K/次 | `--debug` 输出 |
+| Token 消耗 | 按项目预算 | 审查报告与 CI 日志 |
 | 飞书通知成功率 | > 99% | `send-feishu.py` 日志 |
 
 ### 成本优化建议
