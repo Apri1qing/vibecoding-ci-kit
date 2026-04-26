@@ -1,0 +1,3394 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>vibecoding-ci-kit Interactive Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400..700&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --black: #000000;
+      --surface: #111111;
+      --surface-raised: #1a1a1a;
+      --border: #222222;
+      --border-visible: #333333;
+      --text-disabled: #666666;
+      --text-secondary: #999999;
+      --text-primary: #e8e8e8;
+      --text-display: #ffffff;
+      --accent: #d71921;
+      --accent-subtle: rgba(215, 25, 33, 0.12);
+      --success: #4a9e5c;
+      --warning: #d4a843;
+      --info: #7e7e7e;
+      --interactive: #5b9bf6;
+      --display-xl: 118px;
+      --display-lg: 76px;
+      --display-md: 54px;
+      --heading: 28px;
+      --subheading: 22px;
+      --body: 17px;
+      --body-sm: 15px;
+      --caption: 12px;
+      --label: 11px;
+      --space-2xs: 2px;
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 16px;
+      --space-lg: 24px;
+      --space-xl: 32px;
+      --space-2xl: 48px;
+      --space-3xl: 64px;
+      --space-4xl: 96px;
+      --slide-padding: 56px;
+      --card-radius: 18px;
+      --card-radius-sm: 12px;
+      --canvas-width: 1600px;
+      --canvas-height: 900px;
+      --canvas-scale: 1;
+      --safe-x: 116px;
+      --safe-y: 70px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--black);
+      color: var(--text-primary);
+      font-family: "Space Grotesk", system-ui, sans-serif;
+    }
+
+    body {
+      position: relative;
+      background-image:
+        radial-gradient(circle at 20% 18%, rgba(255,255,255,0.05), transparent 18%),
+        radial-gradient(circle at 78% 82%, rgba(215,25,33,0.08), transparent 20%),
+        radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+      background-size: auto, auto, 16px 16px;
+      background-position: center, center, center;
+      animation: gridDrift 22s linear infinite;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::before {
+      background:
+        radial-gradient(circle at 18% 22%, rgba(255,255,255,0.06), transparent 0 18%),
+        radial-gradient(circle at 78% 80%, rgba(215,25,33,0.12), transparent 0 20%);
+      opacity: 0.66;
+      animation: glowShift 16s ease-in-out infinite alternate;
+    }
+
+    body::after {
+      background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.03) 48%, transparent 100%);
+      mix-blend-mode: screen;
+      opacity: 0.08;
+      animation: scanlineDrift 8s linear infinite;
+    }
+
+    .presentation {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      opacity: 1;
+      transition: opacity 180ms ease-out;
+    }
+
+    body[data-i18n-ready="false"] .presentation {
+      opacity: 0;
+    }
+
+    .slides {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(calc(var(--active-slide, 0) * -100%));
+      transition: transform 480ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      will-change: transform;
+    }
+
+    .slide {
+      flex: 0 0 100%;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      min-height: 100vh;
+      min-height: 100dvh;
+      overflow: hidden;
+      position: relative;
+      isolation: isolate;
+      padding: 0;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 28px;
+      pointer-events: none;
+    }
+
+    .slide::after {
+      content: none;
+    }
+
+    .slide-content {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      gap: 22px;
+      align-content: stretch;
+      padding: var(--safe-y) var(--safe-x);
+    }
+
+    .deck-canvas {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: var(--canvas-width);
+      height: var(--canvas-height);
+      transform: translate(-50%, -50%) scale(var(--canvas-scale));
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    .deck-canvas::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,0.035);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: "Space Mono", monospace;
+      font-size: var(--label);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 18px 0 0 var(--warning), 36px 0 0 var(--success);
+      margin-right: 44px;
+    }
+
+    .hero {
+      grid-template-columns: 1fr;
+      grid-template-rows: min-content min-content;
+      align-content: center;
+      justify-items: center;
+      gap: 24px;
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 18px;
+      align-content: center;
+      justify-items: center;
+      text-align: center;
+      max-width: 1140px;
+    }
+
+    .hero-copy h1,
+    .hero-copy h2,
+    .slide-title {
+      margin: 0;
+      color: var(--text-display);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      font-weight: 500;
+    }
+
+    .hero-copy h1 {
+      font-family: "Doto", "Space Mono", monospace;
+      font-size: 96px;
+      text-transform: uppercase;
+    }
+
+    .hero-copy h1.is-cjk {
+      font-family: "Space Grotesk", system-ui, sans-serif;
+      font-size: 92px;
+      line-height: 1.02;
+      letter-spacing: -0.06em;
+      text-transform: none;
+    }
+
+    .slide.is-active .hero-copy h1 {
+      animation: heroPulse 5.5s ease-in-out infinite;
+    }
+
+    .hero-copy .subline,
+    .lead {
+      margin: 0;
+      max-width: 720px;
+      font-size: 20px;
+      line-height: 1.45;
+      color: var(--text-secondary);
+    }
+
+    .hero-copy .subline {
+      max-width: 980px;
+    }
+
+    .hero-terminal {
+      width: 920px;
+      height: 298px;
+      min-height: 0;
+    }
+
+    .cover-terminal {
+      width: 920px;
+      height: 256px;
+      min-height: 0;
+    }
+
+    .cover-panel {
+      width: 920px;
+      margin: 0 auto;
+      display: grid;
+      justify-items: center;
+      text-align: center;
+      gap: 16px;
+    }
+
+    .cover-panel .token-row {
+      justify-content: center;
+    }
+
+    .summary-title {
+      font-size: 54px;
+      line-height: 1.08;
+      max-width: 980px;
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+      text-wrap: nowrap;
+    }
+
+    .summary-cover {
+      align-content: center;
+      justify-items: center;
+      gap: 16px;
+    }
+
+    .summary-cover .cover-terminal {
+      width: 900px;
+      height: 310px;
+      min-height: 0;
+    }
+
+    .panel {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border-visible);
+      border-radius: var(--card-radius);
+      padding: 24px 26px;
+      overflow: hidden;
+      transition: transform 220ms ease-out, border-color 220ms ease-out, background 220ms ease-out;
+    }
+
+    .panel.technical {
+      background: var(--surface);
+    }
+
+    .panel.soft-accent {
+      background: var(--accent-subtle);
+      border-color: rgba(215,25,33,0.4);
+    }
+
+    .panel h3,
+    .panel h4 {
+      margin: 0 0 var(--space-md);
+      color: var(--text-display);
+      font-size: var(--heading);
+      line-height: 1.1;
+      font-weight: 500;
+    }
+
+    .panel p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: var(--body);
+      line-height: 1.5;
+    }
+
+    .mono {
+      font-family: "Space Mono", monospace;
+    }
+
+    .deck-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 24px;
+      height: 100%;
+      align-items: stretch;
+    }
+
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: 1 / -1; }
+
+    .terminal {
+      background: #0d1117;
+      border: 1px solid #2d3137;
+      border-radius: 22px;
+      padding: 26px;
+      display: grid;
+      gap: 16px;
+      min-height: 300px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .terminal-card {
+      min-height: 0;
+      align-content: start;
+    }
+
+    .terminal-stack {
+      display: grid;
+      gap: 12px;
+      margin-top: 6px;
+      color: #d7dce2;
+      font-family: "Space Mono", monospace;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .terminal-line {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .terminal-stack.live-typing .terminal-line,
+    .terminal-stack.live-typing .terminal-rule {
+      opacity: 0;
+      transform: none;
+    }
+
+    .terminal-stack.live-typing .terminal-line {
+      min-height: 1.5em;
+    }
+
+    .slide.is-active .terminal-stack.live-typing .terminal-line,
+    .slide.is-active .terminal-stack.live-typing .terminal-rule {
+      animation: none;
+    }
+
+    .slide.is-active .terminal-line {
+      animation: terminalLineIn 560ms var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+    }
+
+    .slide.is-active .terminal-line:nth-child(1) { animation-delay: 120ms; }
+    .slide.is-active .terminal-line:nth-child(2) { animation-delay: 220ms; }
+    .slide.is-active .terminal-line:nth-child(3) { animation-delay: 320ms; }
+    .slide.is-active .terminal-line:nth-child(4) { animation-delay: 420ms; }
+    .slide.is-active .terminal-line:nth-child(5) { animation-delay: 520ms; }
+
+    .terminal-line.command {
+      color: #77ff92;
+    }
+
+    .terminal-line.command::before {
+      content: "➜";
+      margin-right: 10px;
+      color: #77ff92;
+    }
+
+    .terminal-line.output {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(91,155,246,0.22);
+      background: rgba(91,155,246,0.08);
+      color: #eef4ff;
+      font-family: "Space Grotesk", sans-serif;
+    }
+
+    .terminal-line.output.ending {
+      border-color: rgba(90,197,108,0.22);
+      background: rgba(90,197,108,0.08);
+    }
+
+    .terminal-rule {
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      margin: 4px 0 2px;
+    }
+
+    .terminal-stack.live-typing .terminal-rule {
+      transform-origin: left center;
+      transform: scaleX(0.94);
+      transition: opacity 220ms ease-out, transform 320ms ease-out;
+    }
+
+    .terminal-line.typing-active::after {
+      content: "";
+      display: inline-block;
+      width: 0.62ch;
+      height: 1.06em;
+      margin-left: 4px;
+      vertical-align: -0.12em;
+      border-radius: 1px;
+      background: currentColor;
+      animation: caretBlink 0.92s steps(1) infinite;
+    }
+
+    .terminal::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 18%, rgba(119,255,146,0.09) 48%, transparent 78%);
+      transform: translateX(-130%);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .slide.is-active .terminal::after {
+      opacity: 1;
+      animation: terminalSweep 4.8s ease-in-out infinite;
+    }
+
+    .terminal .window-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-disabled);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .terminal .window-bar span {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 18px 0 0 var(--warning), 36px 0 0 var(--success);
+      margin-right: 38px;
+    }
+
+    .command-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 10px;
+      font-family: "Space Mono", monospace;
+      font-size: 18px;
+      color: #55d26b;
+    }
+
+    .command-list div::before {
+      content: "➜";
+      margin-right: 12px;
+      color: #77ff92;
+    }
+
+    .token-row,
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .token {
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid var(--border-visible);
+      background: rgba(255,255,255,0.02);
+      color: var(--text-primary);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      transition: transform 220ms ease-out, border-color 220ms ease-out, background 220ms ease-out;
+    }
+
+    .token.event { color: var(--accent); border-color: rgba(215,25,33,0.5); }
+    .token.good { color: var(--success); border-color: rgba(74,158,92,0.5); }
+    .token.info { color: var(--interactive); border-color: rgba(91,155,246,0.45); }
+
+    .slide-title {
+      font-size: 64px;
+      max-width: 760px;
+    }
+
+    .summary-cover .summary-title {
+      max-width: 980px;
+    }
+
+    .slide-heading {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .cols-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+      min-height: 0;
+    }
+
+    .docs-loop-layout {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto auto;
+      align-content: center;
+      gap: 24px;
+    }
+
+    .docs-loop-heading {
+      display: grid;
+      justify-items: center;
+      text-align: center;
+      gap: 14px;
+    }
+
+    .docs-loop-title {
+      max-width: 1180px;
+      display: grid;
+      gap: 10px;
+      font-size: 58px;
+      line-height: 1.04;
+      letter-spacing: -0.045em;
+    }
+
+    .doc-line {
+      display: inline-flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 22px;
+      white-space: nowrap;
+    }
+
+    .doc-role {
+      font: inherit;
+      font-weight: inherit;
+      letter-spacing: inherit;
+      text-transform: lowercase;
+    }
+
+    .doc-line.tech .doc-role,
+    .doc-lane.tech .lane-role,
+    .doc-lane.tech .path-leaf {
+      color: var(--interactive);
+    }
+
+    .doc-line.test .doc-role,
+    .doc-lane.test .lane-role,
+    .doc-lane.test .path-leaf {
+      color: var(--warning);
+    }
+
+    .doc-phrase {
+      color: var(--text-display);
+    }
+
+    .docs-loop-heading .lead {
+      max-width: 900px;
+    }
+
+    .docs-lanes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+      max-width: 1180px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .doc-lane {
+      display: grid;
+      gap: 18px;
+      min-height: 268px;
+      padding: 24px 26px;
+      border-radius: var(--card-radius);
+      border: 1px solid var(--border-visible);
+      background: rgba(255,255,255,0.02);
+      align-content: start;
+    }
+
+    .doc-lane.tech {
+      border-color: rgba(91,155,246,0.32);
+      background: linear-gradient(135deg, rgba(91,155,246,0.08), rgba(255,255,255,0.015));
+    }
+
+    .doc-lane.test {
+      border-color: rgba(212,168,67,0.34);
+      background: linear-gradient(135deg, rgba(212,168,67,0.08), rgba(255,255,255,0.015));
+    }
+
+    .lane-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      font-size: 24px;
+      color: var(--text-display);
+    }
+
+    .lane-role {
+      font-family: "Space Mono", monospace;
+      font-size: 16px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .lane-purpose {
+      color: var(--text-secondary);
+      font-size: 16px;
+      line-height: 1.3;
+      text-align: right;
+    }
+
+    .path-tree {
+      display: grid;
+      gap: 6px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.22);
+      font-family: "Space Mono", monospace;
+      font-size: 17px;
+      line-height: 1.25;
+      color: var(--text-primary);
+    }
+
+    .path-node {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+
+    .path-node::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.4);
+      flex: 0 0 auto;
+    }
+
+    .path-child {
+      margin-left: 24px;
+      color: var(--text-secondary);
+    }
+
+    .path-leaf {
+      margin-left: 48px;
+      font-weight: 700;
+    }
+
+    .docs-loop-footer {
+      max-width: 1180px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 18px 20px;
+    }
+
+    .docs-loop-footer h3 {
+      margin-bottom: 12px;
+    }
+
+    .bullet-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+      color: var(--text-primary);
+      font-size: var(--body);
+      line-height: 1.45;
+    }
+
+    .bullet-list li {
+      position: relative;
+      padding-left: 18px;
+    }
+
+    .bullet-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.58em;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--text-secondary);
+    }
+
+    .bullet-list li.event::before { background: var(--accent); }
+    .bullet-list li.good::before { background: var(--success); }
+    .bullet-list li.warn::before { background: var(--warning); }
+
+    .fact-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .fact-item {
+      display: grid;
+      gap: 6px;
+      padding: 14px 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .fact-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .fact-item .label {
+      font-family: "Space Mono", monospace;
+      font-size: var(--label);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .fact-item .value {
+      font-size: var(--body);
+      line-height: 1.4;
+      color: var(--text-display);
+    }
+
+    .big-number {
+      font-family: "Doto", "Space Mono", monospace;
+      font-size: clamp(5rem, 14vw, 12rem);
+      line-height: 0.9;
+      color: var(--text-display);
+    }
+
+    .review-layout,
+    .email-layout,
+    .summary-layout {
+      grid-template-columns: 548px minmax(0, 1fr);
+      align-items: center;
+    }
+
+    .onboarding-layout {
+      grid-template-columns: 548px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      align-items: stretch;
+    }
+
+    .stage-copy {
+      display: grid;
+      gap: 18px;
+      height: 100%;
+      align-content: start;
+    }
+
+    .stage-copy .panel.compact {
+      margin-top: auto;
+    }
+
+    .review-card {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .review-card .state {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      width: fit-content;
+      padding: 0 18px;
+      border-radius: 999px;
+      background: var(--text-display);
+      color: var(--black);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .review-card .state.warn {
+      background: transparent;
+      color: var(--warning);
+      border: 1px solid rgba(212,168,67,0.45);
+    }
+
+    .review-card .state.risk {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid rgba(215,25,33,0.45);
+    }
+
+    .review-card .quote {
+      padding: 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.02);
+      color: var(--text-primary);
+      font-size: var(--body);
+      line-height: 1.45;
+    }
+
+    .email-map {
+      display: grid;
+      place-items: center;
+      min-height: 100%;
+      position: relative;
+    }
+
+    .email-map .center-chip {
+      display: grid;
+      place-items: center;
+      width: 158px;
+      height: 158px;
+      border-radius: 999px;
+      border: 2px solid rgba(215,25,33,0.5);
+      color: var(--text-display);
+      background: rgba(215,25,33,0.08);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+      line-height: 1.4;
+      padding: 20px;
+    }
+
+    .email-map .chip {
+      position: absolute;
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border-visible);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      color: var(--text-primary);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .email-map .chip.one { top: 12%; left: 8%; }
+    .email-map .chip.two { top: 12%; right: 8%; }
+    .email-map .chip.three { bottom: 14%; left: 50%; transform: translateX(-50%); }
+    .email-map svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .discussion {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+      min-height: 0;
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: var(--surface-raised);
+      border: 1px solid var(--border-visible);
+      color: var(--text-display);
+      font-family: "Space Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: var(--caption);
+    }
+
+    .avatar.accent {
+      background: rgba(215,25,33,0.12);
+      border-color: rgba(215,25,33,0.5);
+      color: var(--accent);
+    }
+
+    .bubble {
+      border: 1px solid var(--border-visible);
+      border-radius: 18px;
+      padding: 18px 20px;
+      background: rgba(255,255,255,0.02);
+      display: grid;
+      gap: 14px;
+    }
+
+    .bubble .prompt {
+      font-size: var(--body);
+      line-height: 1.5;
+      color: var(--text-display);
+    }
+
+    .diff {
+      font-family: "Space Mono", monospace;
+      font-size: var(--body-sm);
+      border-radius: 14px;
+      border: 1px solid #23272e;
+      background: #0d1117;
+      padding: 18px;
+      display: grid;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .diff .remove { color: #ff7676; }
+    .diff .add { color: #60e382; }
+
+    .ring-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .ring-card {
+      min-height: 180px;
+      border-radius: 22px;
+      border: 1px solid var(--border-visible);
+      background: rgba(255,255,255,0.02);
+      padding: 18px;
+      display: grid;
+      justify-items: start;
+      align-content: space-between;
+    }
+
+    .ring-card .meter {
+      width: 98px;
+      height: 98px;
+      border-radius: 999px;
+      border: 8px solid rgba(255,255,255,0.08);
+      border-top-color: var(--accent);
+      border-right-color: var(--success);
+      display: grid;
+      place-items: center;
+      font-family: "Space Mono", monospace;
+      color: var(--text-display);
+      font-size: var(--subheading);
+    }
+
+    .ring-card .meta {
+      display: grid;
+      gap: 6px;
+    }
+
+    .ring-card .meta strong {
+      color: var(--text-display);
+      font-size: var(--subheading);
+      font-weight: 500;
+    }
+
+    .summary-layout {
+      align-items: center;
+    }
+
+    .card-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+      min-height: 0;
+      align-items: start;
+      align-content: start;
+    }
+
+    .local-facts-layout {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+      align-content: center;
+      gap: 28px;
+    }
+
+    .local-facts-layout > * {
+      grid-column: auto;
+    }
+
+    .local-facts-intro {
+      display: grid;
+      gap: 18px;
+      max-width: 1100px;
+      justify-items: center;
+      text-align: center;
+      margin: 0 auto;
+    }
+
+    .local-facts-intro .slide-title {
+      max-width: none;
+      font-size: 56px;
+      line-height: 1.02;
+      white-space: nowrap;
+    }
+
+    .local-facts-intro .lead {
+      max-width: 920px;
+      text-align: center;
+    }
+
+    .local-facts-cards .panel.compact {
+      min-height: 176px;
+    }
+
+    .local-facts-cards {
+      width: 100%;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    .panel.compact {
+      padding: 20px 22px;
+    }
+
+    .panel.compact h3 {
+      font-size: clamp(1.08rem, 1.5vw, 1.28rem);
+      margin-bottom: 14px;
+    }
+
+    .prompt-box {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      margin-top: 10px;
+      padding-top: 16px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .prompt-box .label {
+      font-family: "Space Mono", monospace;
+      font-size: var(--label);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .prompt-box .value {
+      color: var(--text-display);
+      font-size: var(--body);
+      line-height: 1.45;
+    }
+
+    .shot-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+      min-height: 0;
+    }
+
+    .shot-card {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--border-visible);
+      background: rgba(255,255,255,0.02);
+      min-height: 0;
+    }
+
+    .shot-card.featured {
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      border-color: rgba(91,155,246,0.45);
+    }
+
+    .shot-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: #0d1117;
+    }
+
+    .slide.is-active .shot-card.featured {
+      animation: cardFloat 6s ease-in-out infinite;
+    }
+
+    .slide.is-active .shot-card.featured img {
+      animation: imageBreath 7s ease-in-out infinite;
+      transform-origin: center center;
+    }
+
+    .shot-card strong {
+      color: var(--text-display);
+      font-size: var(--body);
+      font-weight: 500;
+    }
+
+    .shot-card span {
+      color: var(--text-secondary);
+      font-size: var(--body-sm);
+      line-height: 1.4;
+    }
+
+    .signal-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .signal-box {
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.02);
+      display: grid;
+      gap: 8px;
+      transition: transform 220ms ease-out, border-color 220ms ease-out, background 220ms ease-out;
+    }
+
+    .signal-box .k {
+      font-family: "Space Mono", monospace;
+      font-size: var(--label);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .signal-box .v {
+      color: var(--text-display);
+      font-size: var(--body);
+      line-height: 1.4;
+    }
+
+    .mock-stack {
+      display: grid;
+      gap: 18px;
+      min-height: 0;
+    }
+
+    .mock-window {
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #f6f2eb;
+      color: #171717;
+      box-shadow: 0 22px 44px rgba(0,0,0,0.22);
+      min-height: clamp(330px, 44vh, 430px);
+    }
+
+    .mock-window::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.35), transparent 18%),
+        linear-gradient(90deg, rgba(255,255,255,0.14), transparent 40%);
+      pointer-events: none;
+    }
+
+    .mock-shell {
+      display: grid;
+      grid-template-columns: 116px minmax(0, 1fr);
+      min-height: 100%;
+    }
+
+    .mock-sidebar {
+      background: #ece9e3;
+      border-right: 1px solid rgba(23,23,23,0.08);
+      padding: 16px 12px;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+
+    .mock-nav {
+      display: grid;
+      gap: 8px;
+      font-size: 0.72rem;
+      color: #636363;
+      line-height: 1.3;
+    }
+
+    .mock-nav .active {
+      color: #5a43c2;
+      font-weight: 600;
+    }
+
+    .mock-main {
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .mock-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.82rem;
+      color: #5a5a5a;
+    }
+
+    .mock-tabs {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(23,23,23,0.08);
+      font-size: 0.78rem;
+      color: #6a6a6a;
+      font-weight: 500;
+    }
+
+    .mock-tabs span:first-child {
+      color: #171717;
+      position: relative;
+    }
+
+    .mock-tabs span:first-child::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -11px;
+      height: 2px;
+      background: #5a43c2;
+      border-radius: 999px;
+    }
+
+    .mock-pipeline-top {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mock-branch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: #2057c8;
+      background: rgba(91,155,246,0.12);
+      border: 1px solid rgba(91,155,246,0.28);
+    }
+
+    .mock-branch.warn {
+      color: #bd2d18;
+      background: rgba(215,25,33,0.1);
+      border-color: rgba(215,25,33,0.22);
+    }
+
+    .mock-meta {
+      font-size: 0.74rem;
+      line-height: 1.45;
+      color: #5c5c5c;
+    }
+
+    .mock-review-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(23,23,23,0.08);
+      background: rgba(255,255,255,0.72);
+    }
+
+    .mock-job {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(23,23,23,0.12);
+      background: #ffffff;
+      font-size: 0.9rem;
+      color: #262626;
+    }
+
+    .mock-job::before {
+      content: "";
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      display: inline-block;
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,0.08);
+      background:
+        radial-gradient(circle at 50% 50%, currentColor 32%, transparent 34%),
+        conic-gradient(currentColor 0 240deg, rgba(0,0,0,0.12) 240deg 360deg);
+      color: #e7ab38;
+    }
+
+    .mock-job.mr::before {
+      color: #5b9bf6;
+    }
+
+    .mock-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #1c6c2a;
+      background: rgba(90, 197, 108, 0.16);
+      border: 1px solid rgba(90, 197, 108, 0.24);
+    }
+
+    .mock-badge.danger {
+      color: #b12c2c;
+      background: rgba(215,25,33,0.1);
+      border-color: rgba(215,25,33,0.22);
+    }
+
+    .mock-report {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(23,23,23,0.08);
+      background: #fffdfa;
+      display: grid;
+      gap: 12px;
+    }
+
+    .mock-report h4 {
+      margin: 0;
+      font-size: 1rem;
+      color: #171717;
+      font-weight: 700;
+    }
+
+    .mock-report p {
+      margin: 0;
+      font-size: 0.78rem;
+      line-height: 1.55;
+      color: #3b3b3b;
+    }
+
+    .chip-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .mini-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 9px;
+      border-radius: 8px;
+      background: rgba(189, 45, 24, 0.12);
+      color: #a13e2f;
+      font-size: 0.72rem;
+      font-family: "Space Mono", monospace;
+    }
+
+    .risk-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .risk-cell {
+      padding: 10px 10px 12px;
+      border-radius: 12px;
+      background: #faf8f4;
+      border: 1px solid rgba(23,23,23,0.08);
+      display: grid;
+      gap: 7px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .risk-cell strong {
+      font-size: 0.7rem;
+      color: #626262;
+      font-weight: 600;
+    }
+
+    .risk-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: #ef4040;
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,0.08);
+    }
+
+    .risk-dot.warn { background: #f5cb39; }
+    .risk-dot.good { background: #53c365; }
+
+    .risk-cell span {
+      font-size: 0.86rem;
+      color: #1a1a1a;
+      font-weight: 600;
+    }
+
+    .mock-feishu {
+      padding: 14px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: grid;
+      gap: 14px;
+      min-height: clamp(330px, 44vh, 430px);
+      align-content: center;
+    }
+
+    .feishu-thread {
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .feishu-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #ffcf4d, #f0a000);
+      color: #fffdfa;
+      font-size: 1.15rem;
+      box-shadow: 0 10px 24px rgba(240, 160, 0, 0.22);
+    }
+
+    .feishu-card {
+      border-radius: 22px;
+      overflow: hidden;
+      background: #fffdfa;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 22px 40px rgba(0,0,0,0.2);
+    }
+
+    .feishu-card .header {
+      padding: 16px 18px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1c1c1c;
+    }
+
+    .feishu-card.success .header {
+      background: linear-gradient(90deg, #d9f6d7, #cff5d9, #d9f6d7);
+      color: #257436;
+    }
+
+    .feishu-card.risk .header {
+      background: linear-gradient(90deg, #ffe0e0, #ffe6e6, #ffe0e0);
+      color: #b12c2c;
+    }
+
+    .feishu-card.memory .header {
+      background: linear-gradient(90deg, #d9f7d6, #d7f4d1, #d9f7d6);
+      color: #26733a;
+    }
+
+    .feishu-card.assist .header {
+      background: linear-gradient(90deg, #dceffd, #d8ecfb, #dceffd);
+      color: #22638b;
+    }
+
+    .feishu-body {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+      color: #202020;
+    }
+
+    .feishu-line {
+      display: grid;
+      gap: 6px;
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .feishu-line strong {
+      font-size: 0.92rem;
+    }
+
+    .feishu-divider {
+      height: 1px;
+      background: rgba(23,23,23,0.12);
+    }
+
+    .feishu-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 14px;
+      border: 2px solid rgba(53,112,214,0.52);
+      color: #2765c6;
+      font-size: 0.84rem;
+      font-weight: 600;
+      background: rgba(255,255,255,0.86);
+    }
+
+    .status-stack {
+      display: grid;
+      gap: 16px;
+      min-height: 0;
+      align-content: start;
+    }
+
+    .review-card,
+    .panel.stage-panel,
+    .terminal.stage-panel {
+      min-height: 0;
+    }
+
+    .review-layout .review-card,
+    .email-layout .review-card {
+      align-content: center;
+    }
+
+    .panel.stage-panel {
+      display: grid;
+      align-content: start;
+    }
+
+    .comment-inline {
+      display: grid;
+      gap: 10px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .comment-pill {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: rgba(91,155,246,0.12);
+      border: 1px solid rgba(91,155,246,0.24);
+      color: #a7c5ff;
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.08em;
+    }
+
+    .comment-inline p {
+      margin: 0;
+      color: var(--text-display);
+      font-size: var(--body);
+      line-height: 1.5;
+    }
+
+    .memory-files {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .memory-files span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(23,23,23,0.08);
+      background: rgba(23,23,23,0.04);
+      color: #204220;
+      font-size: 0.75rem;
+      font-family: "Space Mono", monospace;
+    }
+
+    .cursor-halo {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 160px;
+      height: 160px;
+      border-radius: 999px;
+      pointer-events: none;
+      z-index: 6;
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.88);
+      background: radial-gradient(circle, rgba(91,155,246,0.2) 0%, rgba(91,155,246,0.08) 34%, transparent 72%);
+      filter: blur(18px);
+      transition: opacity 180ms ease-out, transform 180ms ease-out, background 180ms ease-out;
+      mix-blend-mode: screen;
+    }
+
+    body.halo-active .cursor-halo {
+      opacity: 0.42;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    [data-tilt] {
+      transform: perspective(1200px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translate3d(0, var(--tilt-lift, 0px), 0);
+      transform-style: preserve-3d;
+      will-change: transform;
+      transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms ease-out;
+    }
+
+    [data-tilt]:hover {
+      --tilt-lift: -4px;
+    }
+
+    .mock-caption {
+      font-size: var(--body-sm);
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 24px;
+      border-radius: 999px;
+      background: var(--text-display);
+      color: var(--black);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      width: fit-content;
+      text-decoration: none;
+    }
+
+    .progress {
+      position: fixed;
+      right: 24px;
+      top: 24px;
+      z-index: 8;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .lang-switch {
+      position: fixed;
+      left: 24px;
+      top: 24px;
+      z-index: 8;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(17,17,17,0.76);
+      backdrop-filter: blur(8px);
+    }
+
+    .lang-btn {
+      border: 0;
+      appearance: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: color 180ms ease-out, background 180ms ease-out;
+    }
+
+    .lang-btn.active {
+      color: var(--black);
+      background: var(--text-display);
+    }
+
+    .lang-btn:not(.active):hover {
+      color: var(--text-display);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .slide:nth-of-type(2) .hero-copy {
+      max-width: 1080px;
+      gap: 16px;
+    }
+
+    .slide:nth-of-type(2) .slide-title {
+      max-width: 1040px !important;
+      font-size: 58px;
+      line-height: 1.08;
+      letter-spacing: -0.045em;
+    }
+
+    .slide:nth-of-type(2) .lead {
+      max-width: 820px;
+      font-size: 19px;
+    }
+
+    .slide:nth-of-type(2) .cover-panel {
+      width: 860px;
+      padding: 18px 20px;
+      gap: 12px;
+    }
+
+    .slide:nth-of-type(2) .cover-panel h3 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    .slide:nth-of-type(2) .token {
+      min-height: 34px;
+      padding: 0 14px;
+    }
+
+    .slide:nth-of-type(2) .cover-terminal {
+      height: 248px;
+    }
+
+    .slide:nth-of-type(10) .hero-copy {
+      max-width: 1160px;
+      gap: 14px;
+    }
+
+    .slide:nth-of-type(10) .lead {
+      max-width: 760px;
+      font-size: 19px;
+    }
+
+    .slide:nth-of-type(10) .token {
+      min-height: 34px;
+      padding: 0 14px;
+    }
+
+    .slide:nth-of-type(10) .cover-terminal {
+      height: 310px;
+      padding: 22px;
+    }
+
+    .slide-dots {
+      position: fixed;
+      right: 28px;
+      bottom: 28px;
+      z-index: 8;
+      display: grid;
+      gap: 10px;
+    }
+
+    .slide-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      transition: transform 180ms ease-out, background 180ms ease-out, border-color 180ms ease-out;
+    }
+
+    .slide-dot.active {
+      background: var(--text-display);
+      border-color: var(--text-display);
+      transform: scale(1.35);
+    }
+
+    .nav-hint {
+      position: fixed;
+      left: 26px;
+      bottom: 24px;
+      z-index: 8;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(17,17,17,0.76);
+      color: var(--text-secondary);
+      font-family: "Space Mono", monospace;
+      font-size: var(--caption);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      transition: opacity 420ms ease-out, transform 420ms ease-out;
+    }
+
+    .slide.is-active .reveal {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .slide.is-active .reveal.delay-1 { transition-delay: 80ms; }
+    .slide.is-active .reveal.delay-2 { transition-delay: 150ms; }
+    .slide.is-active .reveal.delay-3 { transition-delay: 220ms; }
+    .slide.is-active .reveal.delay-4 { transition-delay: 280ms; }
+
+    .slide.is-active .signal-box:nth-child(1) { animation: signalPulse 4.2s ease-in-out infinite; }
+    .slide.is-active .signal-box:nth-child(2) { animation: signalPulse 4.2s ease-in-out 0.5s infinite; }
+    .slide.is-active .signal-box:nth-child(3) { animation: signalPulse 4.2s ease-in-out 1s infinite; }
+
+    .slide.is-active .panel:hover,
+    .slide.is-active .shot-card:hover,
+    .slide.is-active .signal-box:hover,
+    .slide.is-active .token:hover {
+      transform: translateY(-4px);
+      border-color: rgba(255,255,255,0.2);
+    }
+
+    @media (pointer: coarse) {
+      .cursor-halo {
+        display: none;
+      }
+    }
+
+    @keyframes gridDrift {
+      from { background-position: center, center, center; }
+      to { background-position: center, center, 16px 20px; }
+    }
+
+    @keyframes glowShift {
+      from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.52; }
+      to { transform: translate3d(-1.2%, 1.6%, 0) scale(1.06); opacity: 0.78; }
+    }
+
+    @keyframes scanlineDrift {
+      from { transform: translateY(-18%); }
+      to { transform: translateY(22%); }
+    }
+
+    @keyframes heroPulse {
+      0%, 100% { transform: translateY(0); opacity: 1; filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+      50% { transform: translateY(-2px); opacity: 0.98; filter: drop-shadow(0 0 18px rgba(255,255,255,0.1)); }
+    }
+
+    @keyframes terminalSweep {
+      0% { transform: translateX(-130%); }
+      45% { transform: translateX(120%); }
+      100% { transform: translateX(120%); }
+    }
+
+    @keyframes cardFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+
+    @keyframes imageBreath {
+      0%, 100% { transform: scale(1); filter: saturate(1); }
+      50% { transform: scale(1.024); filter: saturate(1.04); }
+    }
+
+    @keyframes signalPulse {
+      0%, 100% { border-color: rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); }
+      50% { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.045); }
+    }
+
+    @keyframes terminalLineIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes caretBlink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    @media (max-width: 980px), (max-height: 760px) {
+      .nav-hint {
+        display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .slides,
+      .reveal,
+      .slide-dot,
+      body,
+      body::before,
+      body::after,
+      .slide.is-active .hero-copy h1,
+      .slide.is-active .terminal::after,
+      .slide.is-active .shot-card.featured,
+      .slide.is-active .shot-card.featured img,
+      .slide.is-active .signal-box,
+      [data-tilt],
+      .cursor-halo {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body data-i18n-ready="false">
+  <div class="lang-switch" aria-label="Language switch">
+    <button class="lang-btn active" type="button" data-lang="en">EN</button>
+    <button class="lang-btn" type="button" data-lang="zh">中文</button>
+  </div>
+  <div class="progress" aria-hidden="true">
+    <span id="progressLabel">01 / 10</span>
+  </div>
+
+  <nav class="slide-dots" id="slideDots" aria-label="Slide navigation"></nav>
+  <div class="nav-hint" id="navHint" aria-hidden="true">← → / WHEEL / SWIPE</div>
+  <div class="cursor-halo" id="cursorHalo" aria-hidden="true"></div>
+
+  <main class="presentation" id="presentation">
+    <div class="slides" id="slides" style="--slide-count: 10; --active-slide: 0;">
+      <section class="slide is-active" data-title="Hero">
+        <div class="deck-canvas">
+        <div class="slide-content hero">
+          <div class="hero-copy">
+            <span class="eyebrow reveal">vibecoding-ci-kit / social deck</span>
+            <h1 class="reveal delay-1">MAKE AI WORK FROM PROJECT FACTS</h1>
+            <p class="subline reveal delay-2">不是把 AI 塞进 CI，而是把项目规则、memory bank、feature tech doc、test plan、GitLab review 和 <span class="mono">@claude</span> 改码串成一个闭环。</p>
+            <div class="tag-row reveal delay-3">
+              <span class="token">GitLab-native</span>
+              <span class="token event">Review by facts</span>
+              <span class="token good">Knowledge loop</span>
+              <span class="token info">Feishu loop</span>
+            </div>
+          </div>
+          <div class="terminal terminal-card hero-terminal reveal delay-2" data-tilt data-halo="blue">
+            <div class="window-bar"><span></span>terminal / boot sequence</div>
+            <div class="terminal-stack live-typing" id="heroTerminal" data-live-terminal>
+              <div class="terminal-line command" data-type-text="vibecoding-ci-kit --init" data-type-speed="34"></div>
+              <div class="terminal-line" data-type-text="loading project facts ... done" data-type-speed="22"></div>
+              <div class="terminal-line" data-type-text="linking GitLab review / @claude / memory-bank" data-type-speed="18"></div>
+              <div class="terminal-rule type-rule"></div>
+              <div class="terminal-line output" data-type-text="它不是“通用 code review bot”，而是“项目事实驱动的协作工作流”。" data-type-speed="36"></div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Onboarding">
+        <div class="deck-canvas">
+        <div class="slide-content hero">
+          <div class="hero-copy reveal">
+            <div class="slide-heading" style="justify-items:center;">
+              <span class="eyebrow">recommended onboarding</span>
+              <h2 class="slide-title">先 clone 仓库，<br>再让你的 Agent<br>完成接入</h2>
+              <p class="lead">推荐方式不是手抄配置，而是先进入这个仓库，再用你自己的 Claude、Codex 或其他 Agent 按 onboarding 把 <span class="mono">repo/</span> 接入目标 GitLab 应用仓。</p>
+            </div>
+            <div class="panel compact cover-panel">
+              <h3>接入完成后，目标仓库会获得什么</h3>
+              <div class="token-row">
+                <span class="token">memory-bank</span>
+                <span class="token">rules</span>
+                <span class="token">hooks</span>
+                <span class="token">skills</span>
+                <span class="token">GitLab CI</span>
+                <span class="token event">@claude</span>
+              </div>
+            </div>
+          </div>
+          <div class="terminal terminal-card cover-terminal reveal delay-1" data-tilt data-halo="blue">
+              <div class="window-bar"><span></span>terminal / onboarding</div>
+              <div class="terminal-stack live-typing" id="onboardingTerminal" data-live-terminal>
+                <div class="terminal-line command" data-type-text="git clone <this-repo>" data-type-speed="28"></div>
+                <div class="terminal-line command" data-type-text="cd vibecoding-ci-kit" data-type-speed="26"></div>
+                <div class="terminal-line command" data-type-text="启动 Claude / Codex / 其他 Agent" data-type-speed="24"></div>
+                <div class="terminal-rule type-rule"></div>
+                <div class="terminal-line output" data-type-text="请使用 /vibecoding-workflow-onboarding，帮我把这套 workflow 接入到我的 GitLab 应用仓。" data-type-speed="20"></div>
+              </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Local facts">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid local-facts-layout">
+          <div class="local-facts-intro reveal">
+            <div class="slide-heading" style="justify-items:center;">
+              <span class="eyebrow">local workflow</span>
+              <h2 class="slide-title">Agent 先读项目事实源，不靠猜</h2>
+              <p class="lead">接入后，Agent 的默认动作会围绕 <span class="mono">AGENTS.md</span>、<span class="mono">memory-bank</span> 和项目规则层展开，<br>而不是只依赖当前聊天上下文。</p>
+            </div>
+          </div>
+          <div class="card-grid-3 local-facts-cards">
+            <div class="panel compact reveal delay-1">
+              <h3>AGENTS.md</h3>
+              <ul class="bullet-list">
+                <li>明确 Agent 的工作方式、入口和注意事项</li>
+                <li class="good">让新会话一开始就知道先看什么</li>
+              </ul>
+            </div>
+            <div class="panel compact reveal delay-2">
+              <h3>memory-bank</h3>
+              <ul class="bullet-list">
+                <li>产品、架构、技术栈、当前工作都有固定落点</li>
+                <li class="good">跨会话保持项目上下文，不用每次重新猜</li>
+              </ul>
+            </div>
+            <div class="panel compact reveal delay-3">
+              <h3>.claude / rules</h3>
+              <ul class="bullet-list">
+                <li>团队编码约定和 memory bank 更新规则</li>
+                <li class="event">新增规则会继续成为 review 的事实源</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Docs loop">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid docs-loop-layout">
+          <div class="docs-loop-heading reveal">
+            <div class="slide-heading">
+              <span class="eyebrow">feature branch loop</span>
+              <h2 class="slide-title docs-loop-title">
+                <span class="doc-line tech"><span class="doc-role">tech doc</span><span class="doc-phrase">定义要做什么</span></span>
+                <span class="doc-line test"><span class="doc-role">test plan</span><span class="doc-phrase">定义如何验证</span></span>
+              </h2>
+              <p class="lead">这两类文档不是摆设。它们会随着 feature 分支演进成为设计依据和验证依据，并持续参与 review。</p>
+            </div>
+          </div>
+          <div class="docs-lanes">
+            <div class="doc-lane tech reveal delay-1">
+              <div class="lane-title">
+                <span class="lane-role">tech doc</span>
+                <span class="lane-purpose">功能技术文档</span>
+              </div>
+              <div class="path-tree">
+                <div class="path-node path-root">memory-bank</div>
+                <div class="path-node path-child">docs/features</div>
+                <div class="path-node path-leaf">*-tech-doc.md</div>
+              </div>
+              <ul class="bullet-list">
+                <li>需求 / 设计 / API / TODO</li>
+                <li>对应 feature/{name}</li>
+                <li class="good">功能技术文档</li>
+              </ul>
+            </div>
+            <div class="doc-lane test reveal delay-2">
+              <div class="lane-title">
+                <span class="lane-role">test plan</span>
+                <span class="lane-purpose">测试计划文档</span>
+              </div>
+              <div class="path-tree">
+                <div class="path-node path-root">memory-bank</div>
+                <div class="path-node path-child">docs/tests</div>
+                <div class="path-node path-leaf">test-plan-*.md</div>
+              </div>
+              <ul class="bullet-list">
+                <li>测试场景 / 测试用例 / 验收标准</li>
+                <li>和 feature TODO 对齐</li>
+                <li class="good">测试计划文档</li>
+              </ul>
+            </div>
+          </div>
+          <div class="reveal delay-3">
+            <div class="panel soft-accent docs-loop-footer">
+              <h3>关键词触发的 hooks 会推动这两类文档持续同步</h3>
+              <div class="token-row">
+                <span class="token event">“需求变了”</span>
+                <span class="token event">“同步技术文档”</span>
+                <span class="token info">“更新测试计划”</span>
+                <span class="token info">“接口改了”</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Feature review">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid review-layout">
+          <div class="review-card reveal">
+            <span class="eyebrow">level 1 review</span>
+            <h2 class="slide-title">feature-review</h2>
+            <span class="state">push 到 feature/*</span>
+            <p class="lead">它不是只看代码风格，而是审查代码变更是否符合项目事实。</p>
+            <div class="quote">开发阶段就把问题拦下来，不用等到提 MR 才第一次看到关键反馈。</div>
+          </div>
+          <div class="panel stage-panel reveal delay-1">
+            <div class="mock-stack">
+              <div class="mock-window" data-tilt data-halo="blue">
+                <div class="mock-shell">
+                  <div class="mock-sidebar">
+                    <div class="mock-nav">
+                      <span>Repository</span>
+                      <span>Merge Requests</span>
+                      <span class="active">CI / CD</span>
+                      <span>Pipelines</span>
+                      <span>Jobs</span>
+                    </div>
+                  </div>
+                  <div class="mock-main">
+                    <div class="mock-titlebar">
+                      <span>2 jobs for <strong>feature/review-facts-flow</strong></span>
+                      <span>latest</span>
+                    </div>
+                    <div class="mock-tabs">
+                      <span>Pipeline</span>
+                      <span>Jobs 2</span>
+                    </div>
+                    <div class="mock-pipeline-top">
+                      <div class="mock-review-row">
+                        <span class="mock-job">feature-review</span>
+                        <span class="mock-badge">passed</span>
+                      </div>
+                      <div class="mock-report">
+                        <h4>代码审查摘要</h4>
+                        <p>本次变更与 tech doc、test plan 保持一致，未发现明显风险，报告会直接回写到 commit / MR 评论区。</p>
+                        <div class="risk-grid">
+                          <div class="risk-cell">
+                            <strong>HIGH</strong>
+                            <div class="risk-dot"></div>
+                            <span>0</span>
+                          </div>
+                          <div class="risk-cell">
+                            <strong>MED</strong>
+                            <div class="risk-dot warn"></div>
+                            <span>0</span>
+                          </div>
+                          <div class="risk-cell">
+                            <strong>LOW</strong>
+                            <div class="risk-dot good"></div>
+                            <span>0</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3>feature-review 的事实源</h3>
+                <div class="fact-list">
+                  <div class="fact-item">
+                    <span class="label">code</span>
+                    <span class="value">分支快照或增量 diff</span>
+                  </div>
+                  <div class="fact-item">
+                    <span class="label">rules</span>
+                    <span class="value">.claude/rules/*.md</span>
+                  </div>
+                  <div class="fact-item">
+                    <span class="label">feature doc</span>
+                    <span class="value">memory-bank/docs/features/*-tech-doc.md</span>
+                  </div>
+                  <div class="fact-item">
+                    <span class="label">review spec</span>
+                    <span class="value">ci-code-review skill</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="MR review">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid review-layout">
+          <div class="review-card reveal">
+            <span class="eyebrow">level 2 review</span>
+            <h2 class="slide-title">mr-review</h2>
+            <span class="state risk">MR 指向 integration/*</span>
+            <p class="lead">它比 feature-review 更严格，负责在合并前做最后一道把关。</p>
+            <div class="quote">不是重复做一次同样的 review，而是基于更完整的项目上下文判断“是否适合集成”。</div>
+          </div>
+          <div class="panel stage-panel reveal delay-1">
+            <div class="mock-stack">
+              <div class="mock-window" data-tilt data-halo="red">
+                <div class="mock-shell">
+                  <div class="mock-sidebar">
+                    <div class="mock-nav">
+                      <span>Overview</span>
+                      <span>Changes</span>
+                      <span class="active">Pipeline</span>
+                      <span>Review</span>
+                      <span>Discussion</span>
+                    </div>
+                  </div>
+                  <div class="mock-main">
+                    <div class="mock-tabs">
+                      <span>Pipeline</span>
+                      <span>Jobs 1</span>
+                    </div>
+                    <div class="mock-review-row">
+                      <span class="mock-job mr">mr-review</span>
+                      <span class="mock-badge danger">high risk</span>
+                    </div>
+                    <div class="mock-report">
+                      <h4>[高风险] MR Review: !128</h4>
+                      <div class="chip-cloud">
+                        <span class="mini-chip">feature/review-facts-flow</span>
+                        <span class="mini-chip">docs-sync</span>
+                        <span class="mini-chip">tech-doc 已存在</span>
+                      </div>
+                      <p>高风险 1 个，中风险 1 个。它会把完整 MR diff、规则、feature tech doc 以及项目级上下文一起纳入判断。</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3>mr-review 的事实源</h3>
+                <div class="fact-list">
+                  <div class="fact-item">
+                    <span class="label">full diff</span>
+                    <span class="value">完整 MR diff</span>
+                  </div>
+                  <div class="fact-item">
+                    <span class="label">rules</span>
+                    <span class="value">.claude/rules/*.md</span>
+                  </div>
+                  <div class="fact-item">
+                    <span class="label">feature doc</span>
+                    <span class="value">feature tech doc</span>
+                  </div>
+                  <div class="fact-item">
+                    <span class="label">project context</span>
+                    <span class="value">systemPatterns / techContext / performance</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="@claude assist">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid email-layout">
+          <div class="review-card reveal">
+            <div class="slide-heading">
+              <span class="eyebrow">@claude assist</span>
+            <h2 class="slide-title">在 GitLab 内<br>完成反馈到修复</h2>
+              <p class="lead">用户不用再把上下文搬到另一个聊天窗口里，Claude 可以直接在 commit / MR 评论链路里读取问题并改代码。</p>
+            </div>
+          </div>
+          <div class="panel stage-panel reveal delay-1">
+            <div class="status-stack">
+              <div class="comment-inline" data-tilt data-halo="blue">
+                <span class="comment-pill">@claude commenter</span>
+                <p>请按人类反馈优先执行：如果结论是“无需修改”，就不要新增提交。</p>
+              </div>
+              <div class="mock-feishu">
+                <div class="feishu-thread">
+                  <div class="feishu-icon">✦</div>
+                  <div class="feishu-card assist" data-tilt data-halo="blue">
+                    <div class="header">Claude Assist: no new commit</div>
+                    <div class="feishu-body">
+                      <div class="feishu-line">
+                        <strong>执行结果</strong>
+                        <span>优先级遵循人类反馈 &gt; AI Review，本次无需对代码进行任何修改。</span>
+                      </div>
+                      <div class="feishu-line">
+                        <strong>最终动作</strong>
+                        <span>保留原分支状态，不新增 commit。</span>
+                      </div>
+                      <div class="feishu-divider"></div>
+                      <span class="feishu-button">查看执行日志</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="signal-strip">
+                <div class="signal-box">
+                  <span class="k">Input</span>
+                  <span class="v">读取 diff、AI review 与人工评论</span>
+                </div>
+                <div class="signal-box">
+                  <span class="k">Priority</span>
+                  <span class="v">人类反馈优先于 AI review</span>
+                </div>
+                <div class="signal-box">
+                  <span class="k">Output</span>
+                  <span class="v">最小修改，或明确“不改”</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Feishu delivery">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid email-layout">
+          <div class="review-card reveal">
+            <span class="eyebrow">Feishu delivery</span>
+            <h2 class="slide-title">结果回写 GitLab，<br>也能通知到飞书</h2>
+            <ul class="bullet-list">
+              <li class="good">feature-review、mr-review、@claude 都可以走飞书通知</li>
+              <li>feature-review 依赖 Git commit author email</li>
+              <li>mr-review / @claude 优先依赖 GitLab profile email</li>
+              <li class="warn">若要按人准确通知，这些邮箱都要和飞书通讯录对齐</li>
+            </ul>
+          </div>
+          <div class="panel stage-panel reveal delay-1">
+            <div class="shot-grid">
+              <div class="shot-card featured">
+                <div class="mock-feishu">
+                  <div class="feishu-thread">
+                    <div class="feishu-icon">◫</div>
+                    <div class="feishu-card success" data-tilt data-halo="green">
+                      <div class="header">[已通过] Feature Review: feature/review-facts-flow</div>
+                      <div class="feishu-body">
+                        <div class="feishu-line">
+                          <strong>风险概况</strong>
+                          <span>未发现明显风险</span>
+                        </div>
+                        <div class="feishu-line">
+                          <strong>提交人</strong>
+                          <span>dev-owner@acme.dev</span>
+                        </div>
+                        <div class="feishu-divider"></div>
+                        <span class="feishu-button">查看完整报告</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <strong>飞书通知卡片示意</strong>
+                <span>根据你给的真实截图重绘：保留绿色头部、风险摘要、提交人和按钮这几个最有识别度的元素。</span>
+              </div>
+            </div>
+            <div class="signal-strip" style="margin-top: 18px;">
+              <div class="signal-box">
+                <span class="k">feature-review</span>
+                <span class="v">看本地 git commit author email</span>
+              </div>
+              <div class="signal-box">
+                <span class="k">mr-review / @claude</span>
+                <span class="v">优先看 GitLab profile email</span>
+              </div>
+              <div class="signal-box">
+                <span class="k">Feishu directory</span>
+                <span class="v">邮箱不对齐时，通知链路会静默失败</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Memory bank">
+        <div class="deck-canvas">
+        <div class="slide-content deck-grid review-layout">
+          <div class="review-card reveal">
+            <span class="eyebrow">knowledge retention</span>
+            <h2 class="slide-title">合并后持续<br>沉淀长期知识</h2>
+            <span class="state">push 到 integration/*</span>
+            <p class="lead"><span class="mono">update-memory-bank</span> 让项目在 merge 之后留下的不是零散 commit，而是可继续被 Agent 读取的结构化知识。</p>
+          </div>
+          <div class="panel stage-panel reveal delay-1">
+            <div class="status-stack">
+              <div class="mock-feishu">
+                <div class="feishu-thread">
+                  <div class="feishu-icon">◎</div>
+                  <div class="feishu-card memory" data-tilt data-halo="green">
+                    <div class="header">Memory bank: updated</div>
+                    <div class="feishu-body">
+                      <div class="feishu-line">
+                        <strong>更新结果</strong>
+                        <span>activeContext、systemPatterns 与 progress 已按 integration 分支事实完成刷新。</span>
+                      </div>
+                      <div class="feishu-line">
+                        <strong>提交人</strong>
+                        <span>dev-owner@acme.dev</span>
+                      </div>
+                      <div class="feishu-divider"></div>
+                      <span class="feishu-button">打开 GitLab</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3>自动对齐的核心文件</h3>
+                <div class="memory-files">
+                  <span>projectbrief.md</span>
+                  <span>productContext.md</span>
+                  <span>systemPatterns.md</span>
+                  <span>techContext.md</span>
+                  <span>activeContext.md</span>
+                  <span>progress.md</span>
+                </div>
+              </div>
+              <div class="signal-strip">
+                <div class="signal-box">
+                  <span class="k">effect</span>
+                  <span class="v">后续 Agent 继续从结构化事实工作</span>
+                </div>
+                <div class="signal-box">
+                  <span class="k">scope</span>
+                  <span class="v">以 integration 合并后的最新项目状态为准</span>
+                </div>
+                <div class="signal-box">
+                  <span class="k">value</span>
+                  <span class="v">长期知识沉淀，是工作流闭环的最后一环</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Summary">
+        <div class="deck-canvas">
+        <div class="slide-content hero summary-cover">
+          <div class="hero-copy reveal">
+            <span class="eyebrow">one-line summary</span>
+            <h2 class="slide-title summary-title">让 AI 按项目事实源<br>开发、审查、修改<br>沉淀知识</h2>
+            <p class="lead">这不是单点 code review 工具，而是一套可合入 GitLab 应用仓库的 AI 协作工作流。</p>
+            <div class="tag-row">
+              <span class="token">Local workflow</span>
+              <span class="token">feature-review</span>
+              <span class="token">mr-review</span>
+              <span class="token event">@claude</span>
+              <span class="token info">Feishu</span>
+              <span class="token good">memory-bank</span>
+            </div>
+          </div>
+          <div class="terminal terminal-card cover-terminal reveal delay-1" data-tilt data-halo="green">
+            <div class="window-bar"><span></span>terminal / workflow closed</div>
+            <div class="terminal-stack live-typing" id="summaryTerminal" data-live-terminal>
+              <div class="terminal-line command" data-type-text="workflow status --final" data-type-speed="28"></div>
+              <div class="terminal-line" data-type-text="local workflow synced" data-type-speed="22"></div>
+              <div class="terminal-line" data-type-text="feature-review / mr-review / @claude / Feishu ready" data-type-speed="16"></div>
+              <div class="terminal-rule type-rule"></div>
+              <div class="terminal-line output ending" data-type-text="end state: 让 AI 按项目自己的事实源来开发、审查、修改和沉淀知识" data-type-speed="30"></div>
+            </div>
+            <a class="cta" href="#0" onclick="window.__presentation.goTo(0); return false;" style="margin-top:auto;">BACK TO START</a>
+          </div>
+        </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const slides = Array.from(document.querySelectorAll('.slide'));
+      const deck = document.getElementById('slides');
+      const dots = document.getElementById('slideDots');
+      const progressLabel = document.getElementById('progressLabel');
+      const navHint = document.getElementById('navHint');
+      const cursorHalo = document.getElementById('cursorHalo');
+      const canvases = Array.from(document.querySelectorAll('.deck-canvas'));
+      const liveTerminals = Array.from(document.querySelectorAll('[data-live-terminal]'));
+      const langButtons = Array.from(document.querySelectorAll('.lang-btn'));
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const languageStorageKey = 'vibecoding-presentation-lang';
+      let active = 0;
+      let locked = false;
+      let touchStartY = 0;
+      let typingTimers = [];
+      let currentLanguage = 'en';
+
+      const translations = {
+        en: {
+          htmlLang: 'en',
+          title: 'vibecoding-ci-kit Interactive Deck',
+          navHint: '← → / WHEEL / SWIPE',
+          slideTitles: ['Hero', 'Onboarding', 'Local facts', 'Docs loop', 'Feature review', 'MR review', '@claude assist', 'Feishu delivery', 'Memory bank', 'Summary'],
+          hero: {
+            eyebrow: 'vibecoding-ci-kit / social deck',
+            title: 'MAKE AI WORK FROM PROJECT FACTS',
+            subline: 'This is not AI shoved into CI. It turns project rules, memory-bank, feature tech docs, test plans, GitLab review, and <span class="mono">@claude</span> edits into one closed loop.',
+            tokens: ['GitLab-native', 'Review by facts', 'Knowledge loop', 'Feishu loop'],
+            terminalBar: 'terminal / boot sequence',
+            terminalLines: [
+              'vibecoding-ci-kit --init',
+              'loading project facts ... done',
+              'linking GitLab review / @claude / memory-bank',
+              'It is not a generic code review bot. It is a workflow driven by project facts.'
+            ]
+          },
+          onboarding: {
+            eyebrow: 'recommended onboarding',
+            title: 'Clone first <br>then let your Agent<br>complete setup',
+            lead: 'Do not hand-copy config. Enter this repo first, then use your own Claude, Codex, or other Agent to onboard <span class="mono">repo/</span> into the target GitLab application repo.',
+            panelTitle: 'What the target repo gets after onboarding',
+            tokens: ['memory-bank', 'rules', 'hooks', 'skills', 'GitLab CI', '@claude'],
+            terminalBar: 'terminal / onboarding',
+            terminalLines: [
+              'git clone <this-repo>',
+              'cd vibecoding-ci-kit',
+              'launch Claude / Codex / another Agent',
+              'Please use /vibecoding-workflow-onboarding to connect this workflow to my GitLab application repo.'
+            ]
+          },
+          localFacts: {
+            eyebrow: 'local workflow',
+            title: 'Agent reads project facts first <br> not guesses',
+            lead: 'After onboarding, the Agent works from <span class="mono">AGENTS.md</span>, <span class="mono">memory-bank</span>, and the project rules layer,<br>instead of relying only on the current chat.',
+            cards: [
+              {
+                title: 'AGENTS.md',
+                bullets: ['Defines how the Agent should work, where to start, and what to watch out for', 'New sessions know what to read first']
+              },
+              {
+                title: 'memory-bank',
+                bullets: ['Product, architecture, stack, and current work all have fixed anchors', 'Project context survives across sessions without re-guessing']
+              },
+              {
+                title: '.claude / rules',
+                bullets: ['Team coding conventions and memory-bank update rules', 'New rules keep becoming sources of truth for review']
+              }
+            ]
+          },
+          docsLoop: {
+            eyebrow: 'feature branch loop',
+            title: '<span class="doc-line tech"><span class="doc-role">tech doc</span><span class="doc-phrase">defines what to build</span></span><span class="doc-line test"><span class="doc-role">test plan</span><span class="doc-phrase">defines how to verify</span></span>',
+            lead: 'These documents are not placeholders. As a feature branch evolves, they become design evidence and verification evidence, and stay part of review.',
+            leftCard: {
+              role: 'tech doc',
+              purpose: 'feature technical document',
+              path: ['memory-bank', 'docs/features', '*-tech-doc.md'],
+              bullets: ['Requirements / design / API / TODO', 'Maps to feature/{name}', 'Feature technical document']
+            },
+            rightCard: {
+              role: 'test plan',
+              purpose: 'test plan document',
+              path: ['memory-bank', 'docs/tests', 'test-plan-*.md'],
+              bullets: ['Test scenarios / cases / acceptance criteria', 'Aligned with feature TODO', 'Test plan document']
+            },
+            footerTitle: 'Keyword-triggered hooks keep both documents in sync',
+            footerTokens: ['"requirements changed"', '"sync tech doc"', '"update test plan"', '"API changed"']
+          },
+          featureReview: {
+            eyebrow: 'level 1 review',
+            title: 'feature-review',
+            state: 'push to feature/*',
+            lead: 'It does not just inspect code style. It checks whether code changes match project facts.',
+            quote: 'Problems are caught while the feature is still being built, not for the first time at MR submission.',
+            mockNav: ['Repository', 'Merge Requests', 'CI / CD', 'Pipelines', 'Jobs'],
+            pipelineTop: '2 jobs for <strong>feature/review-facts-flow</strong>',
+            latest: 'latest',
+            tabs: ['Pipeline', 'Jobs 2'],
+            job: 'feature-review',
+            badge: 'passed',
+            reportTitle: 'Code review summary',
+            reportBody: 'This change stays aligned with the tech doc and test plan, shows no obvious risk, and the report is written back to commit / MR comments.',
+            riskLabels: ['HIGH', 'MED', 'LOW'],
+            factsTitle: 'Sources of truth for feature-review',
+            facts: [
+              ['code', 'branch snapshot or incremental diff'],
+              ['rules', '.claude/rules/*.md'],
+              ['feature doc', 'memory-bank/docs/features/*-tech-doc.md'],
+              ['review spec', 'ci-code-review skill']
+            ]
+          },
+          mrReview: {
+            eyebrow: 'level 2 review',
+            title: 'mr-review',
+            state: 'MR targets integration/*',
+            lead: 'It is stricter than feature-review and acts as the final gate before merge.',
+            quote: 'It is not the same review repeated. It decides whether the change is fit for integration based on fuller project context.',
+            mockNav: ['Overview', 'Changes', 'Pipeline', 'Review', 'Discussion'],
+            tabs: ['Pipeline', 'Jobs 1'],
+            job: 'mr-review',
+            badge: 'high risk',
+            reportTitle: '[High risk] MR Review: !128',
+            chips: ['feature/review-facts-flow', 'docs-sync', 'tech-doc exists'],
+            reportBody: 'One high-risk finding and one medium-risk finding. The review pulls in the full MR diff, rules, feature tech doc, and project-level context.',
+            factsTitle: 'Sources of truth for mr-review',
+            facts: [
+              ['full diff', 'complete MR diff'],
+              ['rules', '.claude/rules/*.md'],
+              ['feature doc', 'feature tech doc'],
+              ['project context', 'systemPatterns / techContext / performance']
+            ]
+          },
+          assist: {
+            eyebrow: '@claude assist',
+            title: 'Close the loop<br>inside GitLab',
+            lead: 'Users do not need to move context into a separate chat window. Claude can read issues directly from commit / MR comments and act there.',
+            pill: '@claude commenter',
+            pillText: 'Please follow human feedback first: if the outcome is “no change needed,” do not create a new commit.',
+            cardHeader: 'Claude Assist: no new commit',
+            resultTitle: 'Execution result',
+            resultText: 'Human feedback overrides AI review here, so no code change is needed in this run.',
+            actionTitle: 'Final action',
+            actionText: 'Keep the branch as-is and do not create a new commit.',
+            button: 'Open execution log',
+            signals: [
+              ['Input', 'Read the diff, AI review, and human comments'],
+              ['Priority', 'Human feedback overrides AI review'],
+              ['Output', 'Minimal fix, or explicitly no change']
+            ]
+          },
+          feishu: {
+            eyebrow: 'Feishu delivery',
+            title: 'Write back to GitLab <br>and notify in Feishu',
+            bullets: [
+              'feature-review, mr-review, and @claude can all send Feishu notifications',
+              'feature-review uses the local git commit author email',
+              'mr-review / @claude prefer the GitLab profile email',
+              'For accurate person-level delivery, those emails must match the Feishu directory'
+            ],
+            icon: '◫',
+            cardHeader: '[Passed] Feature Review: feature/review-facts-flow',
+            riskTitle: 'Risk summary',
+            riskText: 'No obvious risk found',
+            authorTitle: 'Author',
+            authorText: 'dev-owner@acme.dev',
+            button: 'View full report',
+            captionTitle: 'Feishu notification card',
+            captionText: 'Redrawn from your real screenshots: the green header, risk summary, author, and button remain the most recognizable elements.',
+            signals: [
+              ['feature-review', 'Uses the local git commit author email'],
+              ['mr-review / @claude', 'Prefer the GitLab profile email'],
+              ['Feishu directory', 'If emails do not match, delivery can fail silently']
+            ]
+          },
+          memory: {
+            eyebrow: 'knowledge retention',
+            title: 'Keep long-term knowledge<br>after merge',
+            state: 'push to integration/*',
+            lead: '<span class="mono">update-memory-bank</span> leaves behind structured knowledge after merge, not just scattered commits.',
+            icon: '◎',
+            cardHeader: 'Memory bank: updated',
+            resultTitle: 'Update result',
+            resultText: 'activeContext, systemPatterns, and progress were refreshed against integration branch facts.',
+            authorTitle: 'Author',
+            authorText: 'dev-owner@acme.dev',
+            button: 'Open GitLab',
+            filesTitle: 'Core files kept in sync',
+            files: ['projectbrief.md', 'productContext.md', 'systemPatterns.md', 'techContext.md', 'activeContext.md', 'progress.md'],
+            signals: [
+              ['effect', 'Later Agents keep working from structured facts'],
+              ['scope', 'Tracks the latest project state after integration merge'],
+              ['value', 'Long-term knowledge retention is the last step of the workflow loop']
+            ]
+          },
+          summary: {
+            eyebrow: 'one-line summary',
+            title: 'Let AI work from project facts<br>develop, review, modify<br>retain knowledge',
+            lead: 'This is not a single-purpose code review tool. It is an AI collaboration workflow that can be merged into a GitLab application repo.',
+            tokens: ['Local workflow', 'feature-review', 'mr-review', '@claude', 'Feishu', 'memory-bank'],
+            terminalBar: 'terminal / workflow closed',
+            terminalLines: [
+              'workflow status --final',
+              'local workflow synced',
+              'feature-review / mr-review / @claude / Feishu ready',
+              'end state: AI now develops, reviews, modifies, and retains knowledge from project facts'
+            ],
+            cta: 'BACK TO START'
+          },
+          labels: {
+            slideNavigation: 'Slide navigation',
+            goToSlide: 'Go to slide'
+          }
+        },
+        zh: {
+          htmlLang: 'zh-CN',
+          title: 'vibecoding-ci-kit 交互演示',
+          navHint: '← → / 滚轮 / 滑动',
+          slideTitles: ['首页', '接入', '本地事实源', '文档闭环', 'feature-review', 'mr-review', '@claude 助手', '飞书通知', 'memory-bank', '总结'],
+          hero: {
+            eyebrow: 'vibecoding-ci-kit / social deck',
+            title: 'MAKE AI WORK FROM PROJECT FACTS',
+            subline: '不是把 AI 塞进 CI，而是把项目规则、memory bank、feature tech doc、test plan、GitLab review 和 <span class="mono">@claude</span> 改码串成一个闭环。',
+            tokens: ['GitLab-native', 'Review by facts', 'Knowledge loop', 'Feishu loop'],
+            terminalBar: 'terminal / boot sequence',
+            terminalLines: [
+              'vibecoding-ci-kit --init',
+              'loading project facts ... done',
+              'linking GitLab review / @claude / memory-bank',
+              '它不是“通用 code review bot”，而是“项目事实驱动的协作工作流”。'
+            ]
+          },
+          onboarding: {
+            eyebrow: 'recommended onboarding',
+            title: '先 clone 仓库 <br>再让你的 Agent<br>完成接入',
+            lead: '推荐方式不是手抄配置，而是先进入这个仓库，再用你自己的 Claude、Codex 或其他 Agent 按 onboarding 把 <span class="mono">repo/</span> 接入目标 GitLab 应用仓。',
+            panelTitle: '接入完成后，目标仓库会获得什么',
+            tokens: ['memory-bank', 'rules', 'hooks', 'skills', 'GitLab CI', '@claude'],
+            terminalBar: 'terminal / onboarding',
+            terminalLines: [
+              'git clone <this-repo>',
+              'cd vibecoding-ci-kit',
+              '启动 Claude / Codex / 其他 Agent',
+              '请使用 /vibecoding-workflow-onboarding，帮我把这套 workflow 接入到我的 GitLab 应用仓。'
+            ]
+          },
+          localFacts: {
+            eyebrow: 'local workflow',
+            title: 'Agent 先读项目事实源 <br> 不靠猜',
+            lead: '接入后，Agent 的默认动作会围绕 <span class="mono">AGENTS.md</span>、<span class="mono">memory-bank</span> 和项目规则层展开，<br>而不是只依赖当前聊天上下文。',
+            cards: [
+              {
+                title: 'AGENTS.md',
+                bullets: ['明确 Agent 的工作方式、入口和注意事项', '让新会话一开始就知道先看什么']
+              },
+              {
+                title: 'memory-bank',
+                bullets: ['产品、架构、技术栈、当前工作都有固定落点', '跨会话保持项目上下文，不用每次重新猜']
+              },
+              {
+                title: '.claude / rules',
+                bullets: ['团队编码约定和 memory bank 更新规则', '新增规则会继续成为 review 的事实源']
+              }
+            ]
+          },
+          docsLoop: {
+            eyebrow: 'feature branch loop',
+            title: '<span class="doc-line tech"><span class="doc-role">tech doc</span><span class="doc-phrase">定义要做什么</span></span><span class="doc-line test"><span class="doc-role">test plan</span><span class="doc-phrase">定义如何验证</span></span>',
+            lead: '这两类文档不是摆设。它们会随着 feature 分支演进成为设计依据和验证依据，并持续参与 review。',
+            leftCard: {
+              role: 'tech doc',
+              purpose: '功能技术文档',
+              path: ['memory-bank', 'docs/features', '*-tech-doc.md'],
+              bullets: ['需求 / 设计 / API / TODO', '对应 feature/{name}', '功能技术文档']
+            },
+            rightCard: {
+              role: 'test plan',
+              purpose: '测试计划文档',
+              path: ['memory-bank', 'docs/tests', 'test-plan-*.md'],
+              bullets: ['测试场景 / 测试用例 / 验收标准', '和 feature TODO 对齐', '测试计划文档']
+            },
+            footerTitle: '关键词触发的 hooks 会推动这两类文档持续同步',
+            footerTokens: ['“需求变了”', '“同步技术文档”', '“更新测试计划”', '“接口改了”']
+          },
+          featureReview: {
+            eyebrow: 'level 1 review',
+            title: 'feature-review',
+            state: 'push 到 feature/*',
+            lead: '它不是只看代码风格，而是审查代码变更是否符合项目事实。',
+            quote: '开发阶段就把问题拦下来，不用等到提 MR 才第一次看到关键反馈。',
+            mockNav: ['Repository', 'Merge Requests', 'CI / CD', 'Pipelines', 'Jobs'],
+            pipelineTop: '2 jobs for <strong>feature/review-facts-flow</strong>',
+            latest: 'latest',
+            tabs: ['Pipeline', 'Jobs 2'],
+            job: 'feature-review',
+            badge: 'passed',
+            reportTitle: '代码审查摘要',
+            reportBody: '本次变更与 tech doc、test plan 保持一致，未发现明显风险，报告会直接回写到 commit / MR 评论区。',
+            riskLabels: ['HIGH', 'MED', 'LOW'],
+            factsTitle: 'feature-review 的事实源',
+            facts: [
+              ['code', '分支快照或增量 diff'],
+              ['rules', '.claude/rules/*.md'],
+              ['feature doc', 'memory-bank/docs/features/*-tech-doc.md'],
+              ['review spec', 'ci-code-review skill']
+            ]
+          },
+          mrReview: {
+            eyebrow: 'level 2 review',
+            title: 'mr-review',
+            state: 'MR 指向 integration/*',
+            lead: '它比 feature-review 更严格，负责在合并前做最后一道把关。',
+            quote: '不是重复做一次同样的 review，而是基于更完整的项目上下文判断“是否适合集成”。',
+            mockNav: ['Overview', 'Changes', 'Pipeline', 'Review', 'Discussion'],
+            tabs: ['Pipeline', 'Jobs 1'],
+            job: 'mr-review',
+            badge: 'high risk',
+            reportTitle: '[高风险] MR Review: !128',
+            chips: ['feature/review-facts-flow', 'docs-sync', 'tech-doc 已存在'],
+            reportBody: '高风险 1 个，中风险 1 个。它会把完整 MR diff、规则、feature tech doc 以及项目级上下文一起纳入判断。',
+            factsTitle: 'mr-review 的事实源',
+            facts: [
+              ['full diff', '完整 MR diff'],
+              ['rules', '.claude/rules/*.md'],
+              ['feature doc', 'feature tech doc'],
+              ['project context', 'systemPatterns / techContext / performance']
+            ]
+          },
+          assist: {
+            eyebrow: '@claude assist',
+            title: '在 GitLab 内<br>完成反馈到修复',
+            lead: '用户不用再把上下文搬到另一个聊天窗口里，Claude 可以直接在 commit / MR 评论链路里读取问题并改代码。',
+            pill: '@claude commenter',
+            pillText: '请按人类反馈优先执行：如果结论是“无需修改”，就不要新增提交。',
+            cardHeader: 'Claude Assist: no new commit',
+            resultTitle: '执行结果',
+            resultText: '优先级遵循人类反馈 > AI Review，本次无需对代码进行任何修改。',
+            actionTitle: '最终动作',
+            actionText: '保留原分支状态，不新增 commit。',
+            button: '查看执行日志',
+            signals: [
+              ['Input', '读取 diff、AI review 与人工评论'],
+              ['Priority', '人类反馈优先于 AI review'],
+              ['Output', '最小修改，或明确“不改”']
+            ]
+          },
+          feishu: {
+            eyebrow: 'Feishu delivery',
+            title: '结果回写 GitLab <br>也能通知到飞书',
+            bullets: [
+              'feature-review、mr-review、@claude 都可以走飞书通知',
+              'feature-review 依赖 Git commit author email',
+              'mr-review / @claude 优先依赖 GitLab profile email',
+              '若要按人准确通知，这些邮箱都要和飞书通讯录对齐'
+            ],
+            icon: '◫',
+            cardHeader: '[已通过] Feature Review: feature/review-facts-flow',
+            riskTitle: '风险概况',
+            riskText: '未发现明显风险',
+            authorTitle: '提交人',
+            authorText: 'dev-owner@acme.dev',
+            button: '查看完整报告',
+            captionTitle: '飞书通知卡片示意',
+            captionText: '根据你给的真实截图重绘：保留绿色头部、风险摘要、提交人和按钮这几个最有识别度的元素。',
+            signals: [
+              ['feature-review', '看本地 git commit author email'],
+              ['mr-review / @claude', '优先看 GitLab profile email'],
+              ['Feishu directory', '邮箱不对齐时，通知链路会静默失败']
+            ]
+          },
+          memory: {
+            eyebrow: 'knowledge retention',
+            title: '合并后持续<br>沉淀长期知识',
+            state: 'push 到 integration/*',
+            lead: '<span class="mono">update-memory-bank</span> 让项目在 merge 之后留下的不是零散 commit，而是可继续被 Agent 读取的结构化知识。',
+            icon: '◎',
+            cardHeader: 'Memory bank: updated',
+            resultTitle: '更新结果',
+            resultText: 'activeContext、systemPatterns 与 progress 已按 integration 分支事实完成刷新。',
+            authorTitle: '提交人',
+            authorText: 'dev-owner@acme.dev',
+            button: '打开 GitLab',
+            filesTitle: '自动对齐的核心文件',
+            files: ['projectbrief.md', 'productContext.md', 'systemPatterns.md', 'techContext.md', 'activeContext.md', 'progress.md'],
+            signals: [
+              ['effect', '后续 Agent 继续从结构化事实工作'],
+              ['scope', '以 integration 合并后的最新项目状态为准'],
+              ['value', '长期知识沉淀，是工作流闭环的最后一环']
+            ]
+          },
+          summary: {
+            eyebrow: 'one-line summary',
+            title: '让 AI 按项目事实源<br>开发、审查、修改<br>沉淀知识',
+            lead: '这不是单点 code review 工具，而是一套可合入 GitLab 应用仓库的 AI 协作工作流。',
+            tokens: ['Local workflow', 'feature-review', 'mr-review', '@claude', 'Feishu', 'memory-bank'],
+            terminalBar: 'terminal / workflow closed',
+            terminalLines: [
+              'workflow status --final',
+              'local workflow synced',
+              'feature-review / mr-review / @claude / Feishu ready',
+              'end state: 让 AI 按项目自己的事实源来开发、审查、修改和沉淀知识'
+            ],
+            cta: 'BACK TO START'
+          },
+          labels: {
+            slideNavigation: '幻灯片导航',
+            goToSlide: '跳到第'
+          }
+        }
+      };
+
+      function setText(selector, value) {
+        const element = document.querySelector(selector);
+        if (element) element.textContent = value;
+      }
+
+      function setHtml(selector, value) {
+        const element = document.querySelector(selector);
+        if (element) element.innerHTML = value;
+      }
+
+      function setAllText(selector, values) {
+        const elements = Array.from(document.querySelectorAll(selector));
+        elements.forEach((element, index) => {
+          if (values[index] !== undefined) element.textContent = values[index];
+        });
+      }
+
+      function setAllHtml(selector, values) {
+        const elements = Array.from(document.querySelectorAll(selector));
+        elements.forEach((element, index) => {
+          if (values[index] !== undefined) element.innerHTML = values[index];
+        });
+      }
+
+      function setDocLane(selector, card) {
+        const lane = document.querySelector(selector);
+        if (!lane || !card) return;
+        const role = lane.querySelector('.lane-role');
+        const purpose = lane.querySelector('.lane-purpose');
+        const pathNodes = Array.from(lane.querySelectorAll('.path-node'));
+        const list = lane.querySelector('.bullet-list');
+
+        if (role) role.textContent = card.role;
+        if (purpose) purpose.textContent = card.purpose;
+        pathNodes.forEach((node, index) => {
+          if (card.path?.[index]) node.textContent = card.path[index];
+        });
+        if (list) {
+          list.innerHTML = '';
+          card.bullets.forEach((bullet, index) => {
+            const li = document.createElement('li');
+            if (index === card.bullets.length - 1) li.classList.add('good');
+            li.textContent = bullet;
+            list.appendChild(li);
+          });
+        }
+      }
+
+      function setTerminalContent(id, barText, lines) {
+        const terminal = document.getElementById(id);
+        if (!terminal) return;
+        const bar = terminal.closest('.terminal')?.querySelector('.window-bar');
+        if (bar) {
+          const bullets = bar.querySelector('span');
+          bar.innerHTML = '';
+          if (bullets) bar.appendChild(bullets);
+          bar.append(document.createTextNode(barText));
+        }
+        const textLines = Array.from(terminal.querySelectorAll('[data-type-text]'));
+        textLines.forEach((line, index) => {
+          if (lines[index] !== undefined) {
+            line.dataset.typeText = lines[index];
+          }
+        });
+      }
+
+      function setSignalStrip(selector, pairs) {
+        const boxes = Array.from(document.querySelectorAll(`${selector} .signal-box`));
+        boxes.forEach((box, index) => {
+          const pair = pairs[index];
+          if (!pair) return;
+          const [k, v] = pair;
+          const kEl = box.querySelector('.k');
+          const vEl = box.querySelector('.v');
+          if (kEl) kEl.textContent = k;
+          if (vEl) vEl.textContent = v;
+        });
+      }
+
+      function setFactList(selector, title, items) {
+        setText(`${selector} h3`, title);
+        const facts = Array.from(document.querySelectorAll(`${selector} .fact-item`));
+        facts.forEach((fact, index) => {
+          const pair = items[index];
+          if (!pair) return;
+          const [label, value] = pair;
+          const labelEl = fact.querySelector('.label');
+          const valueEl = fact.querySelector('.value');
+          if (labelEl) labelEl.textContent = label;
+          if (valueEl) valueEl.textContent = value;
+        });
+      }
+
+      function setBulletList(containerSelector, title, bullets) {
+        setText(`${containerSelector} h3`, title);
+        const items = Array.from(document.querySelectorAll(`${containerSelector} .bullet-list li`));
+        items.forEach((item, index) => {
+          if (bullets[index] !== undefined) item.textContent = bullets[index];
+        });
+      }
+
+      function setLanguage(nextLanguage, { updateUrl = true } = {}) {
+        const lang = translations[nextLanguage] ? nextLanguage : 'en';
+        const t = translations[lang];
+        currentLanguage = lang;
+
+        document.documentElement.lang = t.htmlLang;
+        document.title = t.title;
+        document.body.setAttribute('data-i18n-ready', 'false');
+        navHint.textContent = t.navHint;
+        dots.setAttribute('aria-label', t.labels.slideNavigation);
+        slides.forEach((slide, index) => {
+          slide.dataset.title = t.slideTitles[index] || slide.dataset.title;
+        });
+        Array.from(dots.children).forEach((dot, index) => {
+          dot.setAttribute('aria-label', `${t.labels.goToSlide} ${index + 1}`);
+        });
+
+        setText('.slide[data-title] .eyebrow', t.hero.eyebrow);
+        setText('.slide:nth-of-type(1) .eyebrow', t.hero.eyebrow);
+        setHtml('.slide:nth-of-type(1) h1', t.hero.title);
+        document.querySelector('.slide:nth-of-type(1) h1')?.classList.remove('is-cjk');
+        setHtml('.slide:nth-of-type(1) .subline', t.hero.subline);
+        setAllText('.slide:nth-of-type(1) .tag-row .token', t.hero.tokens);
+        setTerminalContent('heroTerminal', t.hero.terminalBar, t.hero.terminalLines);
+
+        setText('.slide:nth-of-type(2) .eyebrow', t.onboarding.eyebrow);
+        setHtml('.slide:nth-of-type(2) .slide-title', t.onboarding.title);
+        setHtml('.slide:nth-of-type(2) .lead', t.onboarding.lead);
+        setText('.slide:nth-of-type(2) .cover-panel h3', t.onboarding.panelTitle);
+        setAllText('.slide:nth-of-type(2) .cover-panel .token', t.onboarding.tokens);
+        setTerminalContent('onboardingTerminal', t.onboarding.terminalBar, t.onboarding.terminalLines);
+
+        setText('.slide:nth-of-type(3) .eyebrow', t.localFacts.eyebrow);
+        setHtml('.slide:nth-of-type(3) .slide-title', t.localFacts.title);
+        setHtml('.slide:nth-of-type(3) .lead', t.localFacts.lead);
+        t.localFacts.cards.forEach((card, index) => {
+          setBulletList(`.slide:nth-of-type(3) .card-grid-3 .panel:nth-of-type(${index + 1})`, card.title, card.bullets);
+        });
+
+        setText('.slide:nth-of-type(4) .eyebrow', t.docsLoop.eyebrow);
+        setHtml('.slide:nth-of-type(4) .slide-title', t.docsLoop.title);
+        setHtml('.slide:nth-of-type(4) .lead', t.docsLoop.lead);
+        setDocLane('.slide:nth-of-type(4) .doc-lane.tech', t.docsLoop.leftCard);
+        setDocLane('.slide:nth-of-type(4) .doc-lane.test', t.docsLoop.rightCard);
+        setText('.slide:nth-of-type(4) .soft-accent h3', t.docsLoop.footerTitle);
+        setAllText('.slide:nth-of-type(4) .soft-accent .token', t.docsLoop.footerTokens);
+
+        setText('.slide:nth-of-type(5) .eyebrow', t.featureReview.eyebrow);
+        setHtml('.slide:nth-of-type(5) .slide-title', t.featureReview.title);
+        setText('.slide:nth-of-type(5) .state', t.featureReview.state);
+        setHtml('.slide:nth-of-type(5) .lead', t.featureReview.lead);
+        setHtml('.slide:nth-of-type(5) .quote', t.featureReview.quote);
+        setAllText('.slide:nth-of-type(5) .mock-nav span', t.featureReview.mockNav);
+        setHtml('.slide:nth-of-type(5) .mock-titlebar span:first-child', t.featureReview.pipelineTop);
+        setText('.slide:nth-of-type(5) .mock-titlebar span:last-child', t.featureReview.latest);
+        setAllText('.slide:nth-of-type(5) .mock-tabs span', t.featureReview.tabs);
+        setText('.slide:nth-of-type(5) .mock-job', t.featureReview.job);
+        setText('.slide:nth-of-type(5) .mock-badge', t.featureReview.badge);
+        setText('.slide:nth-of-type(5) .mock-report h4', t.featureReview.reportTitle);
+        setText('.slide:nth-of-type(5) .mock-report p', t.featureReview.reportBody);
+        setAllText('.slide:nth-of-type(5) .risk-cell strong', t.featureReview.riskLabels);
+        setFactList('.slide:nth-of-type(5) .mock-stack > div:last-child', t.featureReview.factsTitle, t.featureReview.facts);
+
+        setText('.slide:nth-of-type(6) .eyebrow', t.mrReview.eyebrow);
+        setHtml('.slide:nth-of-type(6) .slide-title', t.mrReview.title);
+        setText('.slide:nth-of-type(6) .state', t.mrReview.state);
+        setHtml('.slide:nth-of-type(6) .lead', t.mrReview.lead);
+        setHtml('.slide:nth-of-type(6) .quote', t.mrReview.quote);
+        setAllText('.slide:nth-of-type(6) .mock-nav span', t.mrReview.mockNav);
+        setAllText('.slide:nth-of-type(6) .mock-tabs span', t.mrReview.tabs);
+        setText('.slide:nth-of-type(6) .mock-job', t.mrReview.job);
+        setText('.slide:nth-of-type(6) .mock-badge', t.mrReview.badge);
+        setText('.slide:nth-of-type(6) .mock-report h4', t.mrReview.reportTitle);
+        setAllText('.slide:nth-of-type(6) .mini-chip', t.mrReview.chips);
+        setText('.slide:nth-of-type(6) .mock-report p', t.mrReview.reportBody);
+        setFactList('.slide:nth-of-type(6) .mock-stack > div:last-child', t.mrReview.factsTitle, t.mrReview.facts);
+
+        setText('.slide:nth-of-type(7) .eyebrow', t.assist.eyebrow);
+        setHtml('.slide:nth-of-type(7) .slide-title', t.assist.title);
+        setHtml('.slide:nth-of-type(7) .lead', t.assist.lead);
+        setText('.slide:nth-of-type(7) .comment-pill', t.assist.pill);
+        setText('.slide:nth-of-type(7) .comment-inline p', t.assist.pillText);
+        setText('.slide:nth-of-type(7) .feishu-card .header', t.assist.cardHeader);
+        setText('.slide:nth-of-type(7) .feishu-line:nth-of-type(1) strong', t.assist.resultTitle);
+        setText('.slide:nth-of-type(7) .feishu-line:nth-of-type(1) span', t.assist.resultText);
+        setText('.slide:nth-of-type(7) .feishu-line:nth-of-type(2) strong', t.assist.actionTitle);
+        setText('.slide:nth-of-type(7) .feishu-line:nth-of-type(2) span', t.assist.actionText);
+        setText('.slide:nth-of-type(7) .feishu-button', t.assist.button);
+        setSignalStrip('.slide:nth-of-type(7) .signal-strip', t.assist.signals);
+
+        setText('.slide:nth-of-type(8) .eyebrow', t.feishu.eyebrow);
+        setHtml('.slide:nth-of-type(8) .slide-title', t.feishu.title);
+        setAllText('.slide:nth-of-type(8) .bullet-list li', t.feishu.bullets);
+        setText('.slide:nth-of-type(8) .feishu-icon', t.feishu.icon);
+        setText('.slide:nth-of-type(8) .feishu-card .header', t.feishu.cardHeader);
+        setText('.slide:nth-of-type(8) .feishu-line:nth-of-type(1) strong', t.feishu.riskTitle);
+        setText('.slide:nth-of-type(8) .feishu-line:nth-of-type(1) span', t.feishu.riskText);
+        setText('.slide:nth-of-type(8) .feishu-line:nth-of-type(2) strong', t.feishu.authorTitle);
+        setText('.slide:nth-of-type(8) .feishu-line:nth-of-type(2) span', t.feishu.authorText);
+        setText('.slide:nth-of-type(8) .feishu-button', t.feishu.button);
+        setText('.slide:nth-of-type(8) .shot-card > strong', t.feishu.captionTitle);
+        setText('.slide:nth-of-type(8) .shot-card > span', t.feishu.captionText);
+        setSignalStrip('.slide:nth-of-type(8) .signal-strip', t.feishu.signals);
+
+        setText('.slide:nth-of-type(9) .eyebrow', t.memory.eyebrow);
+        setHtml('.slide:nth-of-type(9) .slide-title', t.memory.title);
+        setText('.slide:nth-of-type(9) .state', t.memory.state);
+        setHtml('.slide:nth-of-type(9) .lead', t.memory.lead);
+        setText('.slide:nth-of-type(9) .feishu-icon', t.memory.icon);
+        setText('.slide:nth-of-type(9) .feishu-card .header', t.memory.cardHeader);
+        setText('.slide:nth-of-type(9) .feishu-line:nth-of-type(1) strong', t.memory.resultTitle);
+        setText('.slide:nth-of-type(9) .feishu-line:nth-of-type(1) span', t.memory.resultText);
+        setText('.slide:nth-of-type(9) .feishu-line:nth-of-type(2) strong', t.memory.authorTitle);
+        setText('.slide:nth-of-type(9) .feishu-line:nth-of-type(2) span', t.memory.authorText);
+        setText('.slide:nth-of-type(9) .feishu-button', t.memory.button);
+        setText('.slide:nth-of-type(9) .status-stack > div:nth-of-type(2) h3', t.memory.filesTitle);
+        setAllText('.slide:nth-of-type(9) .memory-files span', t.memory.files);
+        setSignalStrip('.slide:nth-of-type(9) .signal-strip', t.memory.signals);
+
+        setText('.slide:nth-of-type(10) .eyebrow', t.summary.eyebrow);
+        setHtml('.slide:nth-of-type(10) .summary-title', t.summary.title);
+        setHtml('.slide:nth-of-type(10) .lead', t.summary.lead);
+        setAllText('.slide:nth-of-type(10) .tag-row .token', t.summary.tokens);
+        setTerminalContent('summaryTerminal', t.summary.terminalBar, t.summary.terminalLines);
+        setText('.slide:nth-of-type(10) .cta', t.summary.cta);
+
+        langButtons.forEach((button) => {
+          button.classList.toggle('active', button.dataset.lang === lang);
+        });
+
+        localStorage.setItem(languageStorageKey, lang);
+        if (updateUrl) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('lang', lang);
+          history.replaceState({}, '', url);
+        }
+
+        setActive(active);
+        document.body.setAttribute('data-i18n-ready', 'true');
+      }
+
+      function clearTypingTimers() {
+        typingTimers.forEach((timer) => window.clearTimeout(timer));
+        typingTimers = [];
+      }
+
+      function scheduleTyping(callback, delay) {
+        const timer = window.setTimeout(callback, delay);
+        typingTimers.push(timer);
+      }
+
+      function updateCanvasScale() {
+        const canvasWidth = 1600;
+        const canvasHeight = 900;
+        const margin = 48;
+        const availableWidth = Math.max(320, window.innerWidth - margin);
+        const availableHeight = Math.max(240, window.innerHeight - margin);
+        const scale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight, 1);
+        const safeScale = Math.max(scale, 0.18);
+        document.documentElement.style.setProperty('--canvas-scale', safeScale.toFixed(4));
+        canvases.forEach((canvas) => {
+          canvas.style.width = `${canvasWidth}px`;
+          canvas.style.height = `${canvasHeight}px`;
+        });
+      }
+
+      function resetTerminalTyping(terminal) {
+        if (!terminal) return;
+        terminal.querySelectorAll('[data-type-text]').forEach((line) => {
+          line.textContent = '';
+          line.style.opacity = '0';
+          line.classList.remove('typing-active');
+        });
+        const rule = terminal.querySelector('.type-rule');
+        if (rule) {
+          rule.style.opacity = '0';
+          rule.style.transform = 'scaleX(0.94)';
+        }
+      }
+
+      function finishTerminalTyping(terminal) {
+        if (!terminal) return;
+        terminal.querySelectorAll('[data-type-text]').forEach((line) => {
+          line.textContent = line.dataset.typeText || '';
+          line.style.opacity = '1';
+          line.classList.remove('typing-active');
+        });
+        const rule = terminal.querySelector('.type-rule');
+        if (rule) {
+          rule.style.opacity = '1';
+          rule.style.transform = 'scaleX(1)';
+        }
+      }
+
+      function playTerminalTyping(terminal) {
+        if (!terminal) return;
+        resetTerminalTyping(terminal);
+        if (reduceMotion) {
+          finishTerminalTyping(terminal);
+          return;
+        }
+
+        const lines = Array.from(terminal.querySelectorAll('[data-type-text]'));
+        const rule = terminal.querySelector('.type-rule');
+        let cursor = 120;
+
+        lines.forEach((line, index) => {
+          const text = line.dataset.typeText || '';
+          const speed = Number(line.dataset.typeSpeed || 24);
+          scheduleTyping(() => {
+            line.style.opacity = '1';
+            line.classList.add('typing-active');
+          }, cursor);
+
+          Array.from(text).forEach((_, charIndex) => {
+            scheduleTyping(() => {
+              line.textContent = text.slice(0, charIndex + 1);
+            }, cursor + speed * (charIndex + 1));
+          });
+
+          cursor += speed * text.length + 180;
+
+          scheduleTyping(() => {
+            line.classList.remove('typing-active');
+          }, cursor);
+
+          if (index === 2 && rule) {
+            scheduleTyping(() => {
+              rule.style.opacity = '1';
+              rule.style.transform = 'scaleX(1)';
+            }, cursor - 40);
+            cursor += 120;
+          }
+        });
+      }
+
+      function setActive(index) {
+        clearTypingTimers();
+        active = Math.max(0, Math.min(index, slides.length - 1));
+        deck.style.setProperty('--active-slide', active);
+        progressLabel.textContent = `${String(active + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
+        slides.forEach((slide, i) => slide.classList.toggle('is-active', i === active));
+        Array.from(dots.children).forEach((dot, i) => dot.classList.toggle('active', i === active));
+        liveTerminals.forEach((terminal) => {
+          const slide = terminal.closest('.slide');
+          if (slide && slide.classList.contains('is-active')) {
+            playTerminalTyping(terminal);
+          } else {
+            resetTerminalTyping(terminal);
+          }
+        });
+      }
+
+      function goTo(index) {
+        if (locked) return;
+        locked = true;
+        setActive(index);
+        window.setTimeout(() => { locked = false; }, 520);
+      }
+
+      function next() { goTo(active + 1); }
+      function prev() { goTo(active - 1); }
+
+      slides.forEach((slide, index) => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'slide-dot';
+        dot.setAttribute('aria-label', `Go to slide ${index + 1}`);
+        dot.addEventListener('click', () => goTo(index));
+        dots.appendChild(dot);
+      });
+
+      langButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          if (button.dataset.lang !== currentLanguage) {
+            setLanguage(button.dataset.lang);
+          }
+        });
+      });
+
+      window.addEventListener('keydown', (event) => {
+        if (['ArrowDown', 'ArrowRight', 'PageDown', ' '].includes(event.key)) {
+          event.preventDefault();
+          next();
+        }
+        if (['ArrowUp', 'ArrowLeft', 'PageUp'].includes(event.key)) {
+          event.preventDefault();
+          prev();
+        }
+        if (event.key === 'Home') {
+          event.preventDefault();
+          goTo(0);
+        }
+        if (event.key === 'End') {
+          event.preventDefault();
+          goTo(slides.length - 1);
+        }
+      }, { passive: false });
+
+      window.addEventListener('wheel', (event) => {
+        if (Math.abs(event.deltaY) < 18 || locked) return;
+        event.preventDefault();
+        event.deltaY > 0 ? next() : prev();
+      }, { passive: false });
+
+      window.addEventListener('touchstart', (event) => {
+        touchStartY = event.changedTouches[0].clientY;
+      }, { passive: true });
+
+      window.addEventListener('touchend', (event) => {
+        const delta = touchStartY - event.changedTouches[0].clientY;
+        if (Math.abs(delta) < 40 || locked) return;
+        delta > 0 ? next() : prev();
+      }, { passive: true });
+
+      window.addEventListener('resize', updateCanvasScale, { passive: true });
+
+      if (!reduceMotion) {
+        const haloColors = {
+          blue: 'radial-gradient(circle, rgba(91,155,246,0.22) 0%, rgba(91,155,246,0.1) 34%, transparent 72%)',
+          red: 'radial-gradient(circle, rgba(215,25,33,0.2) 0%, rgba(215,25,33,0.08) 34%, transparent 72%)',
+          green: 'radial-gradient(circle, rgba(90,197,108,0.22) 0%, rgba(90,197,108,0.08) 34%, transparent 72%)'
+        };
+
+        window.addEventListener('pointermove', (event) => {
+          cursorHalo.style.left = `${event.clientX}px`;
+          cursorHalo.style.top = `${event.clientY}px`;
+          const target = event.target.closest('[data-halo]');
+          if (target) {
+            document.body.classList.add('halo-active');
+            cursorHalo.style.background = haloColors[target.dataset.halo] || haloColors.blue;
+          } else {
+            document.body.classList.remove('halo-active');
+          }
+        });
+
+        window.addEventListener('pointerleave', () => {
+          document.body.classList.remove('halo-active');
+        });
+
+        document.querySelectorAll('[data-tilt]').forEach((element) => {
+          element.addEventListener('pointermove', (event) => {
+            const rect = element.getBoundingClientRect();
+            const x = (event.clientX - rect.left) / rect.width - 0.5;
+            const y = (event.clientY - rect.top) / rect.height - 0.5;
+            element.style.setProperty('--tilt-y', `${x * 4}deg`);
+            element.style.setProperty('--tilt-x', `${y * -4}deg`);
+          });
+
+          element.addEventListener('pointerleave', () => {
+            element.style.setProperty('--tilt-x', '0deg');
+            element.style.setProperty('--tilt-y', '0deg');
+          });
+        });
+      }
+
+      window.__presentation = { next, prev, goTo };
+      const initialLanguage = (() => {
+        const fromUrl = new URL(window.location.href).searchParams.get('lang');
+        if (fromUrl && translations[fromUrl]) return fromUrl;
+        const stored = localStorage.getItem(languageStorageKey);
+        if (stored && translations[stored]) return stored;
+        return 'en';
+      })();
+      updateCanvasScale();
+      setActive(0);
+      setLanguage(initialLanguage, { updateUrl: Boolean(new URL(window.location.href).searchParams.get('lang')) });
+    })();
+  </script>
+</body>
+</html>

@@ -2,102 +2,129 @@
 
 [English](README.md) · [中文](README.zh.md)
 
-**vibecoding-ci-kit** 本仓库**不是业务应用代码**，而是将 **`repo/`** 目录**内容**合并进 **GitLab 应用仓库根目录**的配置与文档（CI、hooks、memory-bank 等）。说明与 [README.md](README.md) 对应；若有歧义，以英文版为准。
+**vibecoding-ci-kit** 把一个 GitLab 应用仓变成 AI 协作工作流：本地 Agent 按项目事实源开发，CI 按事实源审查 feature 分支和 MR，`@claude` 把 GitLab 评论变成代码修改，`memory-bank` 在合并后继续沉淀项目知识。
 
-**给 Agent：** **[强烈建议由 Agent 完成安装与接入](#给-agent)**（加载 **`vibecoding-workflow-onboarding`**）。
+本仓库**不是业务应用代码**。你需要将 `repo/` 目录**内容**合并进 **GitLab 应用仓库根目录**，为目标仓库加入 CI、hooks、rules、skills 与文档体系。
 
-**CI：** 目前仅支持 **GitLab**。
+**CI：** 目前仅支持 GitLab。
+
+## 先看演示
+
+https://github.com/user-attachments/assets/de0b2826-1fe4-46d2-91f1-3552e54af2de
+
+[打开交互演示页](https://apri1qing.github.io/vibecoding-ci-kit/presentation.html?lang=zh)
 
 ## 前置条件
 
-1. **克隆**本仓库。
-2. **分支**：在 **`feature/<name>`** 上开发，再合并进 **`integration/...`**（或修改 **`.gitlab-ci.yml`** 中的 **`rules:`**，使 CI 与你们的分支名一致）。
+1. **分支**：在 `feature/<name>` 上开发，再合并进 `integration/...`（或修改 `.gitlab-ci.yml` 中的 `rules:`，使 CI 与你们的分支名一致）。
+2. **飞书邮箱身份打通（如启用飞书）**：统一 Git commit author email、GitLab Public email 与飞书通讯录邮箱。`feature-review` 使用 Git commit author email；`mr-review` 和 `@claude` 优先使用 GitLab Public email。
 
----
+## Installation
+
+### 推荐方式：Agent onboarding
+
+克隆本仓库，然后让你的编程 Agent 阅读 [`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)，帮助你把 `repo/` onboarding 到目标 GitLab 应用仓。
+
+强烈推荐这种方式。Agent 可以帮你合并文件、处理冲突、检查 GitLab 变量、Runner、飞书选项和 `@claude` webhook 配置，比手动复制更不容易漏步骤。
+
+如果你想人工安装，见 [Manual 安装](#manual-安装)。
 
 ## 能做什么
 
-| 能力 | 触发时机 |
-|------|----------|
-| **Level 1 AI 代码审查** | 推送到 **`feature/*`** |
-| **Level 2 AI 审查（MR）** | MR 目标为 **`integration/*`** 或 **`integration-*`** |
-| **`@claude`**（在 **commit / MR** 上评论） | 在 **GitLab** 的 **提交**或**合并请求**下**发评论**，文中提及 **`@claude`** 并说明诉求，会**触发流水线**，由 Claude 协助改代码。 |
-| **Memory bank** + **`update-memory-bank`** | 推送到 **`integration/*`**；与 **`AGENTS.md`** 及规则保持同步 |
+| 能力 | 用户得到什么 |
+|------|--------------|
+| 本地开发规范 | Agent 先读 `AGENTS.md`、`memory-bank`、rules、hooks、skills，再开始工作；不是只靠当前聊天上下文猜项目。 |
+| 功能文档闭环 | `feature/*` 上的 tech doc 是技术真相页，test plan 是验证依据；关键词触发 hooks 推动需求、API、TODO、测试场景持续同步。 |
+| `feature-review` | push 到 `feature/*` 时触发，在开发中尽早发现问题。 |
+| `mr-review` | MR 指向 `integration/*` 或 `integration-*` 时触发，用完整 MR diff 和项目上下文做合并前把关。 |
+| `@claude` | 在 GitLab commit 或 MR 下评论并提及 `@claude`，Claude 读取 diff、AI review 和人工评论后回推修复 commit。 |
+| 飞书通知 | 配好飞书变量和邮箱映射后，review 和 assist 结果可回写 GitLab，也可以按人 DM 到飞书。 |
+| Memory bank 沉淀 | MR 合并后，对 `integration/*` 的 push 会触发 `update-memory-bank` pipeline job，自动沉淀长期项目知识。 |
 
-### `repo/.claude/`（以及合并到应用仓根目录的文件）
+## 本地开发：让 Agent 按项目事实工作
+
+接入后，`AGENTS.md`、`memory-bank`、`.claude/rules/`、hooks、skills 会进入你的应用仓。它们共同定义 Agent 先读什么、按什么规则改代码、什么时候同步功能技术文档和测试计划。
+
+**核心文件**
 
 | 文件 | 作用 |
 |------|------|
-| **`settings.json`** | 必须存在，**hooks** 才会在**用户每次提交提示**时执行；没有它，**`hooks/`** 里的脚本**不会运行**。 |
+| `AGENTS.md` | Agent 的仓库入口，定义阅读顺序和工作方式。 |
+| `memory-bank/` | 长期项目知识，包括产品、架构、技术栈、当前进展、功能文档和测试文档。 |
+| `.claude/rules/coding-standards.md` | 团队编码约定，可由 coding-rule hook 扩展。 |
+| `.claude/rules/memory-bank-framework.md` | memory-bank 结构、feature tech doc 命名和更新规则；用户说 `update memory bank` 时，Agent 会按它核对并更新 memory bank。 |
 
-| Hooks | 作用 |
+**Hooks**
+
+| Hook | 作用 |
+|------|------|
+| `code-review-trigger.py` | 用户要求代码审查、重构或“按项目规则”时，先读取 `.claude/rules/`。 |
+| `coding-rule-trigger.py` | 用户要求“记住一条规则”时，把规则追加到 `coding-standards.md`。 |
+| `feature-tech-doc-sync-trigger.py` | 需求、设计、API、TODO 与功能技术文档不一致时，推动 feature tech doc 同步。 |
+| `test-plan-sync-trigger.py` | 测试计划和测试用例更新时，先走 `test-plan` skill。 |
+
+**Skills**
+
+| Skill | 作用 |
 |-------|------|
-| **`code-review-trigger.py`** | 代码审查 / 重构 /「按项目规则」→ 先读 **`.claude/rules/`**。 |
-| **`coding-rule-trigger.py`** | 「记住一条规则」→ 任务结束后往 **`coding-standards.md`** 追加一行。 |
-| **`feature-tech-doc-sync-trigger.py`** | 技术文档同步 / 与代码不一致 → **`memory-bank/docs/features/`**。 |
-| **`test-plan-sync-trigger.py`** | 测试计划 / 用例同步 → 先走 **test-plan** skill。 |
+| `ci-code-review` | 定义 CI 中 `feature-review` / `mr-review` 的输入和报告格式（`CODE_REVIEW_REPORT_LANGUAGE`）。 |
+| `feature-tech-doc` | 定义 `memory-bank/docs/features/*-tech-doc.md`。 |
+| `test-plan` | 定义测试计划，例如 `memory-bank/docs/tests/`。 |
 
-| Rules | 作用 |
-|-------|------|
-| **`coding-standards.md`** | 团队编码约定（可由 coding-rule hook 扩展）。 |
-| **`memory-bank-framework.md`** | Memory bank 目录结构；**`feature/*`** ↔ **`docs/features/*-tech-doc.md`** 命名。 |
+## GitLab Review：按项目事实源把关
 
-| Skills | 作用 |
-|--------|------|
-| **`ci-code-review`** | CI 中 `feature-review` / `mr-review` 的 stdin 与报告格式（`CODE_REVIEW_REPORT_LANGUAGE`）。 |
-| **`feature-tech-doc`** | **`memory-bank/docs/features/*-tech-doc.md`**。 |
-| **`test-plan`** | 测试计划（如 **`memory-bank/docs/tests/`**）。 |
+`feature-review` 和 `mr-review` 不是普通的代码风格点评，而是在 GitLab 流程里检查代码变更是否符合项目事实源。
 
-另有：**`CLAUDE.md`**、**`AGENTS.md`**。
+| 对比项 | `feature-review` | `mr-review` |
+|--------|------------------|-------------|
+| 触发 | push 到 `feature/*`。 | MR 指向 `integration/*` 或 `integration-*`。 |
+| 目的 | 开发中尽早发现问题。 | 合并前更严格把关。 |
+| 事实来源 | 分支代码快照或增量 diff、`.claude/rules/*.md`、对应的 `memory-bank/docs/features/*-tech-doc.md`、`ci-code-review` skill。 | 完整 MR diff、`.claude/rules/*.md`、feature tech doc、`memory-bank/systemPatterns.md`、`memory-bank/techContext.md`、`memory-bank/performance.md`、`ci-code-review` skill。 |
 
----
+## Manual 安装
 
-## 给 Agent
-
-**强烈建议**由 **AI 编程 Agent**（加载 **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)**）完成**安装与接入**：把 **`repo/`** 合并进应用仓、处理冲突、核对 GitLab 变量 / Runner / webhook 等——比纯手工 **`rsync` + 对照清单**更不容易漏步骤。若坚持手动操作，见下文 **[给人类读者](#给人类读者)**。
-
-1. 加载 **[`vibecoding-workflow-onboarding`](.claude/skills/vibecoding-workflow-onboarding/SKILL.md)**（放到 `~/.claude/skills/`）。
-
-2. **Memory bank — 向用户说明是什么、如何更新**
-
-   - **是什么：** **`memory-bank/`** 是应用仓库里**长期保留的项目知识**（范围、产品、架构、技术栈、当前工作、功能/测试相关 **`docs/`**）。不是业务源码，用于人机跨会话对齐。细节见 **`AGENTS.md`** 与 **`memory-bank-framework.md`** 中的 **Reading strategy**。
-
-   - **如何更新：** 日常修改遵循 **`memory-bank-framework.md`** 的 **Update Rules** §1–2 / §4–5。用户要求 **`update memory bank`** 时，按 **§3** 对根目录下**全部核心** `*.md` 做一次核对（不要只改 `activeContext` / `progress`）。在 **`feature/*`** 上开发时，保持对应的 **`docs/features/*-tech-doc.md`** 与分支一致。**CI** 在推送到 **`integration/*`** 时会刷新 **`memory-bank/`** — 见 **[给人类读者](#给人类读者)** 第 **5** 条。
-
----
-
-## 给人类读者
-
-1. **前置条件**见上；在包含 **`repo/`** 的克隆目录执行：
+1. 将 `repo/` 复制进你的应用仓：
 
    ```bash
    rsync -a repo/ /path/to/your/app/
    ```
 
-   如有冲突请解决。CI 在**应用仓库**里运行。
+   如有冲突请解决。CI 在应用仓里运行，不在本 kit 仓库里运行。
 
-2. **GitLab → 设置 → CI/CD → 变量**
+2. 配置 GitLab CI/CD 变量。
 
-   | 变量 | 是否必填 | 用途 |
-   |------|----------|------|
-   | `GITLAB_API_TOKEN` | 是 | CI 中调用 GitLab API。PAT 权限范围：`api` + `read_repository` + `write_repository`（`write_repository` 为必选，`claude-assist` 和 `update-memory-bank` 需要通过 token push 代码）。 |
-   | `GITLAB_TRIGGER_TOKEN` | 是 | 流水线触发令牌；webhook 监听器用于启动 `claude-assist`。 |
+   token 和 secret 类变量应按 GitLab protected 或 masked CI/CD variables 管理。
 
-   | 变量 | 默认值（见 **`repo/.gitlab-ci.yml`**） | 用途 |
-   |------|------------------------------------------|------|
-   | `CODE_REVIEW_REPORT_LANGUAGE` | **`zh`** | 审查报告语言；英文可设为 **`en`**。 |
-   | `CLAUDE_MODEL` | **`claude-sonnet-4-6`** | CI 里传给 `claude` 的模型。 |
-   | `FEISHU_APP_ID` | *未设置* | ❌ | 飞书 app_id；未设置则不发飞书通知。 |
-   | `FEISHU_APP_SECRET` | *未设置* | ✅ | 飞书 app_secret；未设置则不发飞书通知。 |
+   **Required GitLab access**
 
-3. **GitLab Runner 机器：**须使用 **GitLab Runner** 执行作业（不是任意 CI Worker）。运行 Job 的系统用户，其 **`PATH`** 上需有 **`claude`** 与 **`jq`**（供 `feature-review`、`mr-review`、`update-memory-bank` 等）。
+   - `GITLAB_API_TOKEN`：GitLab API token。PAT 权限范围：`api`、`read_repository`、`write_repository`；`claude-assist` 和 `update-memory-bank` 需要写权限来 push commit。
+   - `GITLAB_TRIGGER_TOKEN`：pipeline trigger token，webhook listener 用它启动 `claude-assist`。
 
-4. **`@claude`（在 commit / MR 下评论）：** 在**同一台 Runner 机器**上，将 **[`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/)** 拷到该环境（或放到 `~/.claude/skills/gitlab-runner-onboarding`），用 Claude 打开，并按 **[`SKILL.md`](runner/.claude/skills/gitlab-runner-onboarding/SKILL.md)** 配置 webhook 监听器与 **`GITLAB_TRIGGER_TOKEN`**。
+   **Choose one Claude authentication method**
 
-5. **Memory bank：** **CI** — 合并进 **`integration/*`** 后，**下一次 push** 会跑 **`update-memory-bank`**（GitLab 里无需再输入提示词）；依据 **`AGENTS.md`** 与 **`.claude/rules/memory-bank-framework.md`**。**对话** — 用户说 **`update memory bank`** 时做全量核对（框架 **Update Rules §3**）；日常小改见 §1–2 / §4–5。
+   - `ANTHROPIC_API_KEY`：Anthropic API key 认证。
+   - `CLAUDE_CODE_OAUTH_TOKEN`：来自 `claude setup-token` 的 OAuth token，通常以 `sk-ant-oat01-` 开头。
 
----
+   **Optional runtime settings**
+
+   - `ANTHROPIC_BASE_URL`：内部镜像或企业代理使用的 Anthropic endpoint。
+   - `CLAUDE_MODEL`：CI 里传给 `claude` 的模型；默认值见 `repo/.gitlab-ci.yml`。
+   - `CODE_REVIEW_REPORT_LANGUAGE`：审查报告语言；默认 `zh`，英文设为 `en`。
+
+   **Optional Feishu notifications**
+
+   - `FEISHU_APP_ID`：飞书 app id。
+   - `FEISHU_APP_SECRET`：飞书 app secret。
+   - `FEISHU_DEFAULT_NOTIFY_EMAIL`：无法解析作者身份时的兜底通知邮箱。
+
+3. 准备 GitLab Runner 机器。
+
+   使用 GitLab Runner。运行 Job 的系统用户，其 `PATH` 上需要有 `claude` 和 `jq`，供 `feature-review`、`mr-review`、`claude-assist`、`update-memory-bank` 使用。推送代码前请确保 Runner 已注册并在线，否则 job 会一直 pending。
+
+4. 启用 commit / MR 下的 `@claude` 评论。
+
+   在同一台 Runner 机器上，将 [`runner/.claude/skills/gitlab-runner-onboarding/`](runner/.claude/skills/gitlab-runner-onboarding/) 拷到该环境，或放到 `~/.claude/skills/gitlab-runner-onboarding`。用 Claude 打开它，并按其中的 `SKILL.md` 配置 webhook listener 与 `GITLAB_TRIGGER_TOKEN`。
 
 ## 许可
 
-MIT — 见 [LICENSE](LICENSE)。
+MIT - 见 [LICENSE](LICENSE)。
